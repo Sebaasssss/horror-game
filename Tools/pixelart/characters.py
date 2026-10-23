@@ -1,6 +1,6 @@
-"""Builds a game character (atlas + character.json) from Codex strips drawn on the layout templates.
+"""Builds a game character (atlas + character.json) from strips drawn on the layout templates.
 
-  Tools/.venv/bin/python Tools/pixelart/codex_char.py jason ghost
+  Tools/.venv/bin/python Tools/pixelart/characters.py jason ghost
 
 Per strip: find the green separators / baseline / centre tick, key out magenta and green, scale by the fixed template
 ratio (so every strip shares one scale), quantise to the character palette, add a 1px outline and place the frame
@@ -530,7 +530,7 @@ def build(char_id):
                         "pivotY": pivot[1] if pivot[1] is not None else pivot_bottom(scale)})
         return len(sprites) - 1
 
-    # Codex does not always respect the head guide, so every strip is rescaled to the size of full/idle. Body area
+    # Strips do not always respect the head guide, so every strip is rescaled to the size of full/idle. Body area
     # (without weapon and blood) scales with size squared and barely depends on the pose; each body state expects
     # a known fraction of the full area.
     reference_area = strip_area(sliced[("full", "idle")][0])
@@ -659,7 +659,7 @@ def build(char_id):
         v.pop("_anims")
         v.pop("_frames")
     data = {
-        "id": char_id, "displayName": info["name"], "subtitle": info["subtitle"], "author": "Codex (image gen)",
+        "id": char_id, "displayName": info["name"], "subtitle": info["subtitle"], "author": "",
         "frameW": FRAME_W, "frameH": FRAME_H, "columns": COLUMNS, "sprites": sprites,
         "animations": full["animations"], "moves": full["moves"], "gore": gore, "variants": variants,
         "stats": STATS[char_id],

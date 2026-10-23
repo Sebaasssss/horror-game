@@ -44,14 +44,13 @@ Compilar desde la terminal (con el editor cerrado):
 
 ## Arte y pipeline
 
-Los personajes y escenarios se generaron con generación de imágenes de Codex sobre plantillas
-(`Tools/art_src/templates`) y se procesaron con los scripts de `Tools/pixelart` (ver `CLAUDE.md`). Las imágenes
-fuente originales (cientos de MB) no están en el repo: se descargan como `codex-source-art.zip` desde Releases y se
-descomprimen en `Tools/art_src/` para volver a procesarlas.
+Los personajes y escenarios se dibujan sobre plantillas (`Tools/art_src/templates`) y se procesan con los scripts
+de `Tools/pixelart`. Las imágenes fuente originales (cientos de MB) no están en el repo: se descargan como
+`source-art.zip` desde Releases y se descomprimen en `Tools/art_src/` para volver a procesarlas.
 
 ## Créditos
 
 - Sonidos de impacto e interfaz: [Kenney](https://kenney.nl) (CC0), ver `Assets/Audio/Licenses/`.
-- Algunos efectos y la voz de "FATALITY": ElevenLabs. Música chiptune sintetizada en `Tools/audio/chiptune.py`.
+- Música chiptune sintetizada en `Tools/audio/chiptune.py`.
 - Ghost y Jason son personajes inspirados en franquicias de terror existentes; este es un proyecto de fans sin fines
   comerciales.

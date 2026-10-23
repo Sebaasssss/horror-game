@@ -1,4 +1,4 @@
-"""Layout templates handed to Codex image generation so every strip shares one scale and baseline.
+"""Layout templates for drawing animation strips so every strip shares one scale and baseline.
 
 Each template is a flat magenta (#FF00FF) canvas split into equal cells by thin green (#00FF00) separators,
 with a green baseline (feet) and a green head line (top of head when standing) in every cell.
@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "Tools", "art_src", "templates")
 
-# Codex image generation returns 2172x724 for a 3:1 canvas, so templates use exactly that size.
+# 2172x724 (3:1) canvas.
 CANVAS_W, CANVAS_H = 2172, 724
 HEAD_Y, BASE_Y = 190, 620         # standing character spans 430 px
 MAGENTA, GREEN = (255, 0, 255), (0, 255, 0)

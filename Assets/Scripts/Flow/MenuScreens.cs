@@ -14,7 +14,7 @@ public class TitleScreen : GameScreen
             Layers.Screen + 2);
         press = new PixelText(ui, "medium", "PRESIONA START", new Vector2(0f, -62f), TextAlign.Center,
             Layers.Screen + 3);
-        new PixelText(ui, "small", "(C) 2026 ROCKY + CODEX   F1: CRT", new Vector2(0f, -98f), TextAlign.Center,
+        new PixelText(ui, "small", "(C) 2026 GHOST VS JASON   F1: CRT", new Vector2(0f, -98f), TextAlign.Center,
             Layers.Screen + 3, new Color(0.6f, 0.5f, 0.5f));
         flow.audio.Music("menu");
     }

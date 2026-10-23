@@ -1,7 +1,7 @@
-"""Single source of truth for Codex-generated character animation.
+"""Single source of truth for character animation.
 
 Every strip is drawn on templates/template_<frames>.png. The game reads the same names from character.json,
-so the frame list here, the Codex prompts (codex_jobs.py) and the importer (codex_char.py) stay in sync.
+so the frame list here and the importer (characters.py) stay in sync.
 """
 
 CHARACTERS = {
@@ -190,7 +190,7 @@ SETS = {
 
 # Animation names the game expects; each variant maps them onto the strips it has.
 ALIASES = {
-    # Only used when a full-body strip is missing (e.g. Codex usage limit): borrow the closest animation.
+    # Only used when a full-body strip is missing (not drawn yet): borrow the closest animation.
     "full": {"kick": "roundhouse", "sweep": "crouch_attack", "roundhouse": "kick", "uppercut": "punch_2",
              "walk_back": "walk_forward", "jump_forward": "jump_up", "air_kick": "air_attack"},
     "one_arm": {"punch_2": "punch_1", "uppercut": "slash", "slash_side": "slash", "roundhouse": "kick",

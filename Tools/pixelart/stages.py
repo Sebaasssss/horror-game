@@ -1,7 +1,7 @@
-"""Turns Codex stage panoramas (Tools/art_src/stages/<id>/{far,mid}.png) into parallax stages, and gibs.png into
+"""Turns stage panoramas (Tools/art_src/stages/<id>/{far,mid}.png) into parallax stages, and gibs.png into
 the shared gore-chunk sheet.
 
-  Tools/.venv/bin/python Tools/pixelart/codex_stages.py
+  Tools/.venv/bin/python Tools/pixelart/stages.py
 """
 import json
 import os
@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 
 from anim_spec import STAGES
-from codex_char import despeckle, downscale, is_background, outline, slice_strip
+from characters import despeckle, downscale, is_background, outline, slice_strip
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SRC = os.path.join(ROOT, "Tools", "art_src", "stages")
