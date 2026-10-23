@@ -1,0 +1,16 @@
+{
+ "id": "taqueria",
+ "displayName": "TAQUERIA EL GUERO",
+ "groundY": 28,
+ "music": "fight",
+ "layers": [
+  {
+   "file": "far",
+   "parallax": 0.25
+  },
+  {
+   "file": "mid",
+   "parallax": 1.0
+  }
+ ]
+}

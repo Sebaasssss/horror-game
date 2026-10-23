@@ -1,11 +1,15 @@
 {
  "characters": [
   "ghost",
-  "jason"
+  "jason",
+  "llorona"
  ],
- "lockedSlots": 4,
- "stage": "camp",
+ "lockedSlots": 3,
+ "stage": "abastos",
  "stages": [
+  "abastos",
+  "taqueria",
+  "munecas",
   "camp",
   "utez",
   "woodsboro"

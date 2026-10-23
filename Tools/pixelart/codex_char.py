@@ -22,9 +22,20 @@ SRC = os.path.join(ROOT, "Tools", "art_src")
 OUT = os.path.join(ROOT, "Assets", "Resources", "Characters")
 PREVIEW = os.path.join(ROOT, "Tools", "out")
 
-TARGET_HEIGHT = {"jason": 94, "ghost": 90}
-FRAME_W, FRAME_H = 128, 156
-PIVOT_X = 64
+TARGET_HEIGHT = {"jason": 94, "ghost": 90, "llorona": 90}
+
+# Health is doubled from the first version so fights last long enough to lose limbs.
+STATS = {
+    "jason": {"health": 2200, "walkSpeed": 1.2, "backSpeed": 1.0, "jumpVelocity": 6.3, "jumpForward": 1.9,
+              "gravity": 0.36, "pushWidth": 28, "weight": 1.0},
+    "ghost": {"health": 2000, "walkSpeed": 1.55, "backSpeed": 1.3, "jumpVelocity": 6.7, "jumpForward": 2.3,
+              "gravity": 0.36, "pushWidth": 24, "weight": 1.0},
+    "llorona": {"health": 1900, "walkSpeed": 1.45, "backSpeed": 1.35, "jumpVelocity": 6.9, "jumpForward": 2.4,
+                "gravity": 0.33, "pushWidth": 24, "weight": 0.9},
+}
+ACCENT = {"jason": "#9fc26a", "ghost": "#9fb6ff", "llorona": "#ff7ab6"}
+FRAME_W, FRAME_H = 160, 156
+PIVOT_X = 80
 COLUMNS = 24
 PALETTE_SIZE = 56
 OUTLINE = (8, 5, 6, 255)
@@ -158,7 +169,13 @@ def find_near(profile, expected, radius):
 
 
 def slice_strip(path, frames):
-    """Returns [(cell_rgba_keyed, pivot_x_in_cell, baseline_y)] in source pixels."""
+    """Returns [(rgba, pivot_x, baseline_y)] per frame in source pixels.
+
+    Pixels are assigned to frames by connected component (owner = cell holding the component's centre), so a
+    machete that crosses a separator stays with the frame that swings it instead of leaking into the next cell.
+    """
+    from scipy import ndimage
+
     img = np.array(Image.open(path).convert("RGB"))
     h, w = img.shape[:2]
     sx, sy = w / CANVAS_W, h / CANVAS_H
@@ -173,9 +190,27 @@ def slice_strip(path, frames):
         if i < frames - 1:
             x1 = find_near(col_profile, x1, int(20 * sx))
         bounds.append((x0, x1))
+
+    keyed = ~is_background(img)
+    labels, count = ndimage.label(keyed, structure=np.ones((3, 3)))
+    owner = np.full(count + 1, -1, dtype=np.int32)
+    if count:
+        sizes = ndimage.sum(keyed, labels, index=np.arange(1, count + 1))
+        centres = ndimage.center_of_mass(keyed, labels, index=np.arange(1, count + 1))
+        slices = ndimage.find_objects(labels)
+        for k in range(count):
+            if sizes[k] < 4:
+                continue
+            cx = centres[k][1]
+            cell_index = next((i for i, (a, b) in enumerate(bounds) if a <= cx < b), len(bounds) - 1)
+            width = slices[k][1].stop - slices[k][1].start
+            cell_width = bounds[cell_index][1] - bounds[cell_index][0]
+            # A blob far wider than a cell is two figures touching: fall back to splitting it on the separators.
+            owner[k + 1] = -2 if width > 1.6 * cell_width else cell_index
+
     cells = []
-    keyed_all = ~is_background(img)
-    for x0, x1 in bounds:
+    columns = np.arange(w)[None, :]
+    for index, (x0, x1) in enumerate(bounds):
         sub_green = green[:, x0:x1]
         row_profile = sub_green.sum(axis=1)
         baseline = find_near(row_profile, int(BASE_Y * sy), int(30 * sy))
@@ -184,13 +219,14 @@ def slice_strip(path, frames):
         pivot = float(cols.mean()) if len(cols) else (x1 - x0) / 2.0
         if abs(pivot - (x1 - x0) / 2.0) > 40 * sx:
             pivot = (x1 - x0) / 2.0
-        rgba = np.zeros((h, x1 - x0, 4), dtype=np.uint8)
-        rgba[..., :3] = despill(img[:, x0:x1])
-        rgba[..., 3] = np.where(keyed_all[:, x0:x1], 255, 0)
-        # Trim a few pixels at the cell edges where separator lines bleed.
-        rgba[:, :int(4 * sx), 3] = 0
-        rgba[:, -int(4 * sx):, 3] = 0
-        cells.append((rgba, pivot, baseline))
+        mine = (owner[labels] == index) | ((owner[labels] == -2) & (columns >= x0) & (columns < x1))
+        xs = np.nonzero(mine.any(axis=0))[0]
+        left = min(x0, xs.min()) if len(xs) else x0
+        right = max(x1, xs.max() + 1) if len(xs) else x1
+        rgba = np.zeros((h, right - left, 4), dtype=np.uint8)
+        rgba[..., :3] = despill(img[:, left:right])
+        rgba[..., 3] = np.where(mine[:, left:right], 255, 0)
+        cells.append((rgba, pivot + (x0 - left), baseline))
     return cells, sy
 
 
@@ -204,39 +240,57 @@ FRAME0_UPRIGHT = {"punch_1", "punch_2", "slash", "slash_side", "kick", "roundhou
 
 
 def mask_height(cell):
-    """Height of the largest bright low-saturation blob (the mask), measured on a 3x downsampled grid."""
-    from collections import deque
-    c = cell[::3, ::3]
-    rgb = c[..., :3].astype(int)
+    """Height of the largest bright low-saturation blob (the mask / pale face)."""
+    from scipy import ndimage
+    rgb = cell[..., :3].astype(int)
     lo, hi = rgb.min(axis=2), rgb.max(axis=2)
-    m = (c[..., 3] > 0) & (lo > 130) & (hi - lo < 75)
-    h, w = m.shape
-    seen = np.zeros_like(m)
-    best = 0
-    for y0, x0 in zip(*np.nonzero(m)):
-        if seen[y0, x0]:
-            continue
-        queue, ys = deque([(y0, x0)]), []
-        seen[y0, x0] = True
-        while queue:
-            y, x = queue.popleft()
-            ys.append(y)
-            for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
-                if 0 <= ny < h and 0 <= nx < w and m[ny, nx] and not seen[ny, nx]:
-                    seen[ny, nx] = True
-                    queue.append((ny, nx))
-        if len(ys) > 12:
-            best = max(best, (max(ys) - min(ys) + 1) * 3)
-    return best
+    m = (cell[..., 3] > 0) & (lo > 130) & (hi - lo < 75)
+    labels, count = ndimage.label(m)
+    if not count:
+        return 0
+    sizes = ndimage.sum(m, labels, index=np.arange(1, count + 1))
+    k = int(np.argmax(sizes))
+    if sizes[k] < 120:
+        return 0
+    rows = ndimage.find_objects(labels)[k][0]
+    return rows.stop - rows.start
 
 
 NO_MASK = {"headless", "bisected", "gore_parts", "thrown", "knockdown", "getup"}
 
 
-def strip_mask_height(cells):
+# Expected body area of each body state relative to the full body (missing limbs remove area).
+AREA_FACTOR = {"full": 1.0, "one_arm": 0.9, "no_arms": 0.8, "one_leg": 0.86, "no_legs": 0.56}
+ANIM_AREA_FACTOR = {"headless": 0.9}
+
+
+def body_area(cell):
+    """Opaque pixels that belong to the body: blood / rusty red and bright blade metal are excluded."""
+    rgb = cell[..., :3].astype(int)
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    opaque = cell[..., 3] > 0
+    red = (r > 140) & (g < 70) & (b < 80)
+    lo, hi = rgb.min(axis=2), rgb.max(axis=2)
+    metal = (lo > 150) & (hi - lo < 30) & (hi > 175)
+    return int((opaque & ~red & ~metal).sum())
+
+
+def strip_area(cells):
+    areas = [body_area(c) for c, _, _ in cells]
+    areas = [a for a in areas if a > 0]
+    return float(np.median(areas)) if areas else 0.0
+
+
+def strip_mask_height(cells, strict=False):
+    """Median mask height of a strip, or 0 when too few frames show it (or, if strict, it varies too much)."""
     heights = [mask_height(c) for c, _, _ in cells]
     heights = [h for h in heights if h > 0]
-    return float(np.median(heights)) if len(heights) >= max(1, len(cells) // 2) else 0.0
+    if len(heights) < max(1, (len(cells) + 1) // 2):
+        return 0.0
+    median = float(np.median(heights))
+    if strict and np.std(heights) / max(median, 1) > 0.3:
+        return 0.0
+    return median
 
 
 def body_height(cell, baseline, min_row=14):
@@ -360,7 +414,7 @@ def chain(*pairs):
 def base_moves(char_id, anim_frames, blade_hit):
     """Full-body move list. anim_frames maps animation name -> frame count (after aliases)."""
     slow = 2 if char_id == "jason" else 0
-    dmg = 1.15 if char_id == "jason" else 1.0
+    dmg = {"jason": 1.15, "ghost": 1.0, "llorona": 0.95}.get(char_id, 1.0)
     f = anim_frames
     d = lambda v: int(round(v * dmg))
     return [
@@ -395,7 +449,7 @@ def base_moves(char_id, anim_frames, blade_hit):
         move("special", "forward+heavy", "stand", "special", f["special"], 12 + slow, 8, 20, d(110),
              lunge=6.0 if char_id == "ghost" else 4.5, knockdown=True, dismember=0.15, hit=blade_hit + "_heavy",
              whiff="whoosh_heavy", shake=0.7, hitstop=12, blood=16,
-             name="LUNGE STAB" if char_id == "ghost" else "MACHETE RUSH"),
+             name={"ghost": "LUNGE STAB", "jason": "MACHETE RUSH", "llorona": "LAMENTO"}.get(char_id, "SPECIAL")),
     ]
 
 
@@ -468,39 +522,22 @@ def build(char_id):
                         "pivotY": pivot[1] if pivot[1] is not None else pivot_bottom(scale)})
         return len(sprites) - 1
 
-    # Codex does not always respect the head guide: normalise upright strips to full/idle and let every other
-    # strip of a body state inherit that state's idle correction.
-    reference = strip_height(sliced[("full", "idle")][0])
-    mask_reference = strip_mask_height(sliced[("full", "idle")][0])
+    # Codex does not always respect the head guide, so every strip is rescaled to the size of full/idle. Body area
+    # (without weapon and blood) scales with size squared and barely depends on the pose; each body state expects
+    # a known fraction of the full area.
+    reference_area = strip_area(sliced[("full", "idle")][0])
     corrections = {}
-    for variant in SETS:
-        idle = sliced.get((variant, "idle"))
-        base = 1.0
-        if idle and variant in ("full", "one_arm", "one_leg", "no_arms"):
-            height = strip_height(idle[0])
-            base = float(np.clip(reference / height, 0.75, 1.25)) if height else 1.0
-        for key, (cell_list, _) in sliced.items():
-            if key[0] != variant:
-                continue
-            corr = base
-            if variant == "no_legs":
-                pass
-            elif key[1] in UPRIGHT:
-                height = strip_height(cell_list)
-                corr = float(np.clip(reference / height, 0.75, 1.25)) if height else base
-            elif key[1] in FRAME0_UPRIGHT:
-                cell, _, baseline = cell_list[0]
-                height = body_height(cell, baseline)
-                if height and 0.8 <= reference / height <= 1.25:
-                    corr = reference / height
-            elif key[1] not in NO_MASK and mask_reference:
-                height = strip_mask_height(cell_list)
-                if height:
-                    corr = float(np.clip(mask_reference / height, 0.85, 1.18))
-            corrections[key] = corr
-    odd = {f"{k[0]}/{k[1]}": round(v, 2) for k, v in corrections.items() if abs(v - 1) > 0.04}
+    for key, (cell_list, _) in sliced.items():
+        variant, anim = key
+        if anim in ("gore_parts",):
+            corrections[key] = 1.0
+            continue
+        area = strip_area(cell_list)
+        expected = reference_area * AREA_FACTOR.get(variant, 1.0) * ANIM_AREA_FACTOR.get(anim, 1.0)
+        corrections[key] = float(np.clip(math.sqrt(expected / area), 0.7, 1.35)) if area else 1.0
+    odd = {f"{k[0]}/{k[1]}": round(v, 2) for k, v in corrections.items() if abs(v - 1) > 0.15}
     if odd:
-        print("  scale corrections:", odd)
+        print("  large scale corrections:", odd)
 
     variants = []
     for variant in SETS:
@@ -617,12 +654,9 @@ def build(char_id):
         "id": char_id, "displayName": info["name"], "subtitle": info["subtitle"], "author": "Codex (image gen)",
         "frameW": FRAME_W, "frameH": FRAME_H, "columns": COLUMNS, "sprites": sprites,
         "animations": full["animations"], "moves": full["moves"], "gore": gore, "variants": variants,
-        "stats": {"health": 1100 if char_id == "jason" else 1000,
-                  "walkSpeed": 1.2 if char_id == "jason" else 1.55, "backSpeed": 1.0 if char_id == "jason" else 1.3,
-                  "jumpVelocity": 6.3 if char_id == "jason" else 6.7, "jumpForward": 1.9 if char_id == "jason" else 2.3,
-                  "gravity": 0.36, "pushWidth": 28 if char_id == "jason" else 24, "weight": 1.0},
+        "stats": STATS[char_id],
         "hurtStand": full["hurtStand"], "hurtCrouch": full["hurtCrouch"], "hurtAir": full["hurtAir"],
-        "bloodColor": "#9a0c14", "accentColor": "#9fc26a" if char_id == "jason" else "#9fb6ff",
+        "bloodColor": "#9a0c14", "accentColor": ACCENT.get(char_id, "#ffffff"),
         "neckX": round(4 * TARGET_HEIGHT[char_id] / 92.0, 1), "neckY": round(78 * TARGET_HEIGHT[char_id] / 92.0, 1),
     }
     with open(os.path.join(out_dir, "character.json"), "w") as f:

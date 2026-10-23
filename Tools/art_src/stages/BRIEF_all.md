@@ -7,6 +7,24 @@ Detailed 16-bit arcade fighting-game stage pixel art (Mortal Kombat II / Samurai
 
 ## Images (in this order)
 
+### `abastos/far.png`
+No template, wide 3:1 panorama (2172x724). FAR layer of the stage 'CENTRAL DE ABASTOS': Mexico City's huge Central de Abastos wholesale market at night, abandoned and horrifying: long warehouse aisle with stacked wooden crates of tomatoes, chiles and mangoes, hanging bunches of dried chiles, metal hand trucks (diablitos), colourful papel picado strings, a butcher stall with hanging meat and blood dripping, flickering fluorescent tubes, hand-painted Spanish signs, trash, fog. Only the sky and the distant background (horizon at about 55% height), fully painted, no characters.
+
+### `abastos/mid.png`
+No template, wide 3:1 panorama (2172x724), same scene, same palette and perspective as `abastos/far.png` (pass it as reference). MAIN layer: the foreground architecture and props of 'CENTRAL DE ABASTOS' seen from the side at human eye level, like a 2D fighting game stage. The bottom 13% of the image is a flat walkable ground strip where the fighters stand. Everything above the scenery silhouette (the sky) is flat magenta (#FF00FF) so it can be cut out. Keep the centre of the image open (fighters stand there). No characters.
+
+### `taqueria/far.png`
+No template, wide 3:1 panorama (2172x724). FAR layer of the stage 'TAQUERIA EL GUERO': A Mexican street taco stand at night on a dark city corner: a spinning trompo of al pastor with a pineapple on top, a glowing neon sign 'TAQUERIA EL GUERO', red plastic stools and tables, bowls of salsa and limes, a griddle steaming, papel picado, a bloody cleaver stuck in the cutting board, a flickering street lamp, a parked VW Beetle, horror atmosphere with fog and a full moon. Only the sky and the distant background (horizon at about 55% height), fully painted, no characters.
+
+### `taqueria/mid.png`
+No template, wide 3:1 panorama (2172x724), same scene, same palette and perspective as `taqueria/far.png` (pass it as reference). MAIN layer: the foreground architecture and props of 'TAQUERIA EL GUERO' seen from the side at human eye level, like a 2D fighting game stage. The bottom 13% of the image is a flat walkable ground strip where the fighters stand. Everything above the scenery silhouette (the sky) is flat magenta (#FF00FF) so it can be cut out. Keep the centre of the image open (fighters stand there). No characters.
+
+### `munecas/far.png`
+No template, wide 3:1 panorama (2172x724). FAR layer of the stage 'ISLA DE LAS MUNECAS': The Island of the Dolls in Xochimilco at night: a dark canal with colourful wooden trajinera boats with painted names, hundreds of creepy dirty dolls and doll heads hanging from the trees and the wooden fence, a rotten wooden hut, lily pads, thick fog over the water, full moon, deeply unsettling. Only the sky and the distant background (horizon at about 55% height), fully painted, no characters.
+
+### `munecas/mid.png`
+No template, wide 3:1 panorama (2172x724), same scene, same palette and perspective as `munecas/far.png` (pass it as reference). MAIN layer: the foreground architecture and props of 'ISLA DE LAS MUNECAS' seen from the side at human eye level, like a 2D fighting game stage. The bottom 13% of the image is a flat walkable ground strip where the fighters stand. Everything above the scenery silhouette (the sky) is flat magenta (#FF00FF) so it can be cut out. Keep the centre of the image open (fighters stand there). No characters.
+
 ### `camp/far.png`
 No template, wide 3:1 panorama (2172x724). FAR layer of the stage 'CAMP BLOOD': Camp Crystal Lake at night: black pine forest, a misty lake with the full moon reflected, wooden summer-camp cabins with one lit window, a wooden dock with a bloody canoe, a hanging camp sign, fog, fireflies, a bloody axe stuck in a stump. Only the sky and the distant background (horizon at about 55% height), fully painted, no characters.
 

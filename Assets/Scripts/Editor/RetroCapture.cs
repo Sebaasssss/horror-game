@@ -69,7 +69,7 @@ public static class RetroCapture
         Step(flow, 20);
         Save("03b_stage_select");
 
-        flow.pick1 = Roster.Find("ghost");
+        flow.pick1 = Roster.Find("llorona") ?? Roster.Find("ghost");
         flow.pick2 = Roster.Find("jason");
         flow.Go(new VersusScreen(), true);
         Step(flow, 40);
@@ -84,7 +84,7 @@ public static class RetroCapture
         Transform matchRoot = Nodes.Group(root.transform, "Match World");
         CpuInput cpu1 = new CpuInput(0.9f, 11);
         CpuInput cpu2 = new CpuInput(0.9f, 23);
-        Match match = new Match(matchRoot, display, audio, flow.pick1, flow.pick2, cpu1, cpu2, "utez");
+        Match match = new Match(matchRoot, display, audio, flow.pick1, flow.pick2, cpu1, cpu2, "taqueria");
         MatchPhase lastPhase = match.phase;
         int hits = 0, lastHealth = match.p1.health + match.p2.health;
         int shots = 0;

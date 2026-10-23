@@ -159,8 +159,10 @@ public class Hud
             splat.length += splat.speed;
             splat.speed *= 0.985f;
             Vector3 p = splat.blob.transform.localPosition;
-            Nodes.SetRect(splat.streak, new Vector2(p.x + 1f, p.y - Mathf.Round(splat.length)),
-                new Vector2(Mathf.Max(1f, splat.blob.transform.localScale.x - 2f), Mathf.Round(splat.length)));
+            float width = Mathf.Max(1f, Mathf.Round(splat.blob.transform.localScale.x * 0.25f));
+            float x = p.x + Mathf.Round(splat.blob.transform.localScale.x * 0.4f);
+            Nodes.SetRect(splat.streak, new Vector2(x, p.y - Mathf.Round(splat.length)),
+                new Vector2(width, Mathf.Round(splat.length)));
             float alpha = Mathf.Clamp01((splat.life - splat.age) / 40f);
             Color c = splat.blob.color;
             c.a = alpha;

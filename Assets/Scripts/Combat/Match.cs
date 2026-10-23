@@ -386,7 +386,6 @@ public class Match
         hud.Splatter(26, victim.def.bloodColor);
         Sfx("gore_rip");
         Sfx("fatality_gore");
-        Sfx("scream_" + victim.def.Id);
 
         Color blood = victim.def.bloodColor;
         float away = killer.facing;
@@ -457,21 +456,24 @@ public class Match
 
     // ------------------------------------------------------------------ dismemberment
 
-    // High-damage combos can sever a limb: arms free-then-weapon, legs left-then-right.
+    // Limbs come off as health drops: the first one below 65% health, the second below 35%. Heavy hits and combos
+    // make it near certain once the threshold is crossed; otherwise there is still a small random chance.
     private void TryDismember(Fighter attacker, Fighter defender, MoveEntry move, int damage, bool counter)
     {
         if (defender.limbsLost >= 2 || defender.health <= 0 || phase != MatchPhase.Fight)
             return;
-        float chance = move.dismember;
-        if (defender.comboTaken >= 3)
-            chance += 0.18f + 0.12f * (defender.comboTaken - 3);
-        if (damage >= 120)
-            chance += 0.12f;
-        if (counter)
-            chance += 0.1f;
-        if (attacker.chainCount >= 2)
-            chance += 0.15f;
-        if (Range(0f, 1f) >= Mathf.Min(0.8f, chance))
+        float ratio = defender.health / (float)defender.MaxHealth;
+        int allowed = ratio < 0.35f ? 2 : ratio < 0.65f ? 1 : 0;
+        float chance;
+        if (defender.limbsLost < allowed)
+        {
+            chance = 0.35f + move.dismember;
+            if (damage >= 90 || defender.comboTaken >= 3 || counter || attacker.chainCount >= 2)
+                chance += 0.45f;
+        }
+        else
+            chance = defender.limbsLost == 0 && defender.comboTaken >= 4 ? 0.08f + move.dismember * 0.5f : 0f;
+        if (Range(0f, 1f) >= Mathf.Min(0.95f, chance))
             return;
 
         string current = defender.kit.Name;
@@ -511,7 +513,6 @@ public class Match
         fx.Shake(1f);
         Sfx("gore_rip");
         Sfx("dismember");
-        Sfx("scream_" + defender.def.Id);
     }
 
     // ------------------------------------------------------------------ hits
@@ -610,8 +611,6 @@ public class Match
         hitstop = move.hitstop + (lethal ? 14 : 0) + (critical ? 6 : 0);
         Sfx(move.sfxHit);
         Sfx("blood_splat", 0.6f);
-        if (heavy || lethal || Range(0f, 1f) < 0.4f)
-            Sfx("pain_" + defender.def.Id, 0.8f);
         hud.Combo(attacker, defender.comboTaken);
         if (critical)
             hud.Callout(attacker, "CRITICAL!");
@@ -662,8 +661,6 @@ public class Match
             victim.pos = hand - grip;
         }
         victim.pos.y = Mathf.Max(0f, victim.pos.y);
-        if (tick == 8)
-            Sfx("grunt_" + thrower.def.Id, 0.8f);
     }
 
     public void ReleaseThrow(Fighter thrower, Fighter victim)
@@ -685,7 +682,6 @@ public class Match
         fx.Blood(victim.pos + new Vector2(0f, 40f), new Vector2(thrower.facing, 1f), 40, victim.def.bloodColor, 3f);
         hitstop = 6;
         Sfx("throw");
-        Sfx("pain_" + victim.def.Id, 0.8f);
         if (victim.health <= 0)
             OnKnockout(victim, thrower);
     }
