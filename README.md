@@ -5,9 +5,9 @@ de Halloween. Gore pixel art, desmembramiento, FINISH HIM / FATALITY, filtro CRT
 
 ## Jugar
 
-- **En el navegador:** https://ander-tsx.github.io/horror-game/ (no hay que instalar nada).
+- **En el navegador:** https://sebaasssss.github.io/horror-game/ (no hay que instalar nada).
 - **Windows / Mac:** descarga el zip de la última versión en
-  [Releases](https://github.com/Ander-tsx/horror-game/releases), descomprime y abre `GhostVsJason`.
+  [Releases](https://github.com/Sebaasssss/horror-game/releases), descomprime y abre `GhostVsJason`.
   - En Mac, la primera vez: clic derecho sobre la app → *Abrir* (no está firmada).
 
 ## Controles
@@ -22,8 +22,9 @@ de Halloween. Gore pixel art, desmembramiento, FINISH HIM / FATALITY, filtro CRT
 | Especial | Adelante + `G` | Adelante + `L` |
 | Patada giratoria | Atrás + `H` | Atrás + `;` |
 | Bloquear | Mantener atrás (abajo + atrás = bloqueo bajo) | igual |
+| Dash | Doble toque adelante / atrás | igual |
 
-- Combos: `F F F` (jab, cross, uppercut), `G G`, `H H`.
+- Combos: `F F F` (jab, cross, uppercut), `G G`, `H H`; cualquier golpe que conecta se cancela al especial.
 - Al bajar la vida se pierden extremidades: sin un brazo, sin brazos, en una pierna o arrastrándose sin piernas.
 - **FINISH HIM:** fuerte = decapitación, patada = en trozos, golpe o agarre = explota en mil pedazos.
 - `Esc` pausa, `F1` activa o desactiva el filtro CRT, `Enter` o `F` para confirmar en menús.
@@ -31,7 +32,7 @@ de Halloween. Gore pixel art, desmembramiento, FINISH HIM / FATALITY, filtro CRT
 ## Abrir el proyecto
 
 1. Instala **Unity 6000.6.4f1** con Unity Hub (con soporte WebGL / Windows / Mac si quieres compilar).
-2. `git clone https://github.com/Ander-tsx/horror-game.git` y ábrelo desde Unity Hub.
+2. `git clone https://github.com/Sebaasssss/horror-game.git` y ábrelo desde Unity Hub.
 3. Abre `Assets/Scenes/Game.unity` y dale Play. En el objeto `Game`, `quickFight` salta los menús.
 
 Compilar desde la terminal (con el editor cerrado):
