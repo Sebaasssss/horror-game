@@ -1,0 +1,56 @@
+{
+ "fonts": [
+  {
+   "name": "small",
+   "chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?.,:-'/+&%()<>* ",
+   "cellW": 8,
+   "cellH": 10,
+   "columns": 16,
+   "advance": 6,
+   "glyphW": 5,
+   "glyphH": 7,
+   "lineHeight": 10,
+   "originX": 1,
+   "originY": 2
+  },
+  {
+   "name": "medium",
+   "chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?.,:-'/+&%()<>* ",
+   "cellW": 13,
+   "cellH": 17,
+   "columns": 16,
+   "advance": 12,
+   "glyphW": 10,
+   "glyphH": 14,
+   "lineHeight": 20,
+   "originX": 1,
+   "originY": 2
+  },
+  {
+   "name": "large",
+   "chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?.,:-'/+&%()<>* ",
+   "cellW": 21,
+   "cellH": 27,
+   "columns": 16,
+   "advance": 18,
+   "glyphW": 15,
+   "glyphH": 21,
+   "lineHeight": 30,
+   "originX": 2,
+   "originY": 4
+  },
+  {
+   "name": "blood",
+   "chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!?.,:-'/+&%()<>* ",
+   "cellW": 21,
+   "cellH": 27,
+   "columns": 16,
+   "advance": 18,
+   "glyphW": 15,
+   "glyphH": 21,
+   "lineHeight": 30,
+   "originX": 2,
+   "originY": 4
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+{
+ "id": "fallback",
+ "displayName": "CAMP BLOOD",
+ "groundY": 28,
+ "layers": [
+  {
+   "file": "layer0",
+   "parallax": 0.1
+  },
+  {
+   "file": "layer1",
+   "parallax": 0.35
+  },
+  {
+   "file": "layer2",
+   "parallax": 1.0
+  }
+ ]
+}
