@@ -65,6 +65,7 @@ public class GameFlow
 
     public GameMode mode = GameMode.VsCpu;
     public CharacterDef pick1, pick2;
+    public string stageId;
     public int cpuSkillLevel = 1;
     public bool escapePressed;
     public int tick;

@@ -112,7 +112,7 @@ public class SelectScreen : GameScreen
             {
                 flow.pick1 = roster[sides[0].slot];
                 flow.pick2 = roster[sides[1].slot];
-                flow.Go(new VersusScreen());
+                flow.Go(new StageSelectScreen());
             }
         }
     }
@@ -227,7 +227,8 @@ public class VersusScreen : GameScreen
         rightName = new PixelText(ui, "large", flow.pick2.Name, new Vector2(96f, -100f), TextAlign.Center,
             Layers.Screen + 6);
         leftName.Visible = rightName.Visible = false;
-        flow.audio.Music("versus");
+        flow.audio.StopMusic();
+        flow.audio.Sfx("versus_sting", 1f, 0f);
     }
 
     public override void Tick(InputFrame p1, InputFrame p2)

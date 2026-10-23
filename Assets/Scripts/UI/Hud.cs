@@ -4,6 +4,13 @@ using UnityEngine;
 // Fight HUD: health bars with damage trail, round skulls, timer, names, combo counter, banners and screen flash.
 public class Hud
 {
+    private class Splat
+    {
+        public SpriteRenderer blob, streak;
+        public float length, speed;
+        public int age, life;
+    }
+
     private class Banner
     {
         public PixelText text;
@@ -27,6 +34,9 @@ public class Hud
     private readonly int[] trailDelay = new int[2];
     private readonly PixelText timer;
     private readonly List<Banner> banners = new List<Banner>();
+    private readonly List<Splat> splats = new List<Splat>();
+    private readonly PixelText[] callouts = new PixelText[2];
+    private readonly int[] calloutTicks = new int[2];
     private readonly SpriteRenderer flash;
     private Sprite skullOn, skullOff;
     private int flashTicks, flashLength;
@@ -64,6 +74,8 @@ public class Hud
             }
             combos[side] = new PixelText(root, "medium", "", new Vector2(sign * (BarOuter - 12f), 46f),
                 side == 0 ? TextAlign.Left : TextAlign.Right, Layers.Hud + 4);
+            callouts[side] = new PixelText(root, "small", "", new Vector2(sign * (BarOuter - 12f), 34f),
+                side == 0 ? TextAlign.Left : TextAlign.Right, Layers.Hud + 4, new Color(1f, 0.35f, 0.3f));
         }
 
         Nodes.Sprite(root, "Timer Box", Art.Sprite("UI/timer_box"), new Vector2(0f, 92f), Layers.Hud + 2);
@@ -118,6 +130,8 @@ public class Hud
 
             if (comboTicks[side] > 0 && --comboTicks[side] == 0)
                 combos[side].Set("");
+            if (calloutTicks[side] > 0 && --calloutTicks[side] == 0)
+                callouts[side].Set("");
         }
 
         timer.Set(Mathf.Max(0, match.timer).ToString("00"));
@@ -135,6 +149,29 @@ public class Hud
             {
                 banner.text.Destroy();
                 banners.RemoveAt(i);
+            }
+        }
+
+        for (int i = splats.Count - 1; i >= 0; i--)
+        {
+            Splat splat = splats[i];
+            splat.age++;
+            splat.length += splat.speed;
+            splat.speed *= 0.985f;
+            Vector3 p = splat.blob.transform.localPosition;
+            Nodes.SetRect(splat.streak, new Vector2(p.x + 1f, p.y - Mathf.Round(splat.length)),
+                new Vector2(Mathf.Max(1f, splat.blob.transform.localScale.x - 2f), Mathf.Round(splat.length)));
+            float alpha = Mathf.Clamp01((splat.life - splat.age) / 40f);
+            Color c = splat.blob.color;
+            c.a = alpha;
+            foreach (SpriteRenderer part in splat.blob.GetComponentsInChildren<SpriteRenderer>())
+                part.color = c;
+            splat.streak.color = c;
+            if (splat.age >= splat.life)
+            {
+                Nodes.Destroy(splat.blob.gameObject);
+                Nodes.Destroy(splat.streak.gameObject);
+                splats.RemoveAt(i);
             }
         }
 
@@ -170,6 +207,45 @@ public class Hud
         comboTicks[side] = 70;
     }
 
+    // Blood thrown onto the "screen glass": blobs that run down and fade.
+    public void Splatter(int count, Color blood)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            float size = Random.Range(3, 9);
+            Vector2 at = new Vector2(Mathf.Round(Random.Range(-180f, 180f)), Mathf.Round(Random.Range(-60f, 90f)));
+            Color color = new Color(blood.r * Random.Range(0.8f, 1.3f), blood.g, blood.b, 1f);
+            SpriteRenderer blob = Nodes.Rect(root, "Splat", at, new Vector2(size, Mathf.Round(size * 0.7f)), color,
+                Layers.Overlay - 30);
+            // Irregular edges: a few smaller lobes and loose droplets around the main blob.
+            for (int k = 0; k < 4; k++)
+            {
+                float lobe = Mathf.Max(1f, Mathf.Round(size * Random.Range(0.3f, 0.6f)));
+                Vector2 offset = new Vector2(Random.Range(-size * 0.6f, size), Random.Range(-size * 0.4f, size * 0.8f));
+                Nodes.Rect(blob.transform, "Lobe", offset / size, new Vector2(lobe / size, lobe / (size * 0.7f)),
+                    color, Layers.Overlay - 30);
+            }
+            for (int k = 0; k < 3; k++)
+            {
+                Vector2 drop = new Vector2(Random.Range(-2.5f, 3.5f), Random.Range(-1.5f, 2.5f));
+                Nodes.Rect(blob.transform, "Drop", drop, new Vector2(1f / size, 1f / (size * 0.7f)), color,
+                    Layers.Overlay - 30);
+            }
+            SpriteRenderer streak = Nodes.Rect(root, "Streak", at, Vector2.one, color, Layers.Overlay - 31);
+            splats.Add(new Splat
+            {
+                blob = blob, streak = streak, speed = Random.Range(0.15f, 0.6f), life = Random.Range(110, 200)
+            });
+        }
+    }
+
+    public void Callout(Fighter fighter, string text)
+    {
+        int side = fighter.index;
+        callouts[side].Set(text);
+        calloutTicks[side] = 60;
+    }
+
     public void Flash(Color color, int ticks)
     {
         color.a = 0.85f;
@@ -181,6 +257,16 @@ public class Hud
     public void SetVisible(bool visible)
     {
         root.gameObject.SetActive(visible);
+    }
+
+    public void ClearSplatter()
+    {
+        foreach (Splat splat in splats)
+        {
+            Nodes.Destroy(splat.blob.gameObject);
+            Nodes.Destroy(splat.streak.gameObject);
+        }
+        splats.Clear();
     }
 
     public void Destroy()

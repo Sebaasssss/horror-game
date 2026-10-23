@@ -1,0 +1,16 @@
+{
+ "id": "utez",
+ "displayName": "UTEZ",
+ "groundY": 28,
+ "music": "fight_utez",
+ "layers": [
+  {
+   "file": "far",
+   "parallax": 0.25
+  },
+  {
+   "file": "mid",
+   "parallax": 1.0
+  }
+ ]
+}

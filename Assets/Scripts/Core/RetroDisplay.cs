@@ -69,6 +69,9 @@ public class RetroDisplay
         if (!createScreen)
             return;
 
+        // Without a listener Unity plays no audio at all.
+        cameraObject.AddComponent<AudioListener>();
+
         // The real screen only clears to black; the canvas draws the game texture on top of it.
         GameObject screenCameraObject = new GameObject("Screen Camera");
         screenCameraObject.transform.SetParent(root.transform, false);

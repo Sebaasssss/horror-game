@@ -10,8 +10,9 @@ public class FightScreen : GameScreen
     public override void Enter()
     {
         match = new Match(world, flow.display, flow.audio, flow.pick1, flow.pick2, flow.SourceForSide(0),
-            flow.SourceForSide(1), Roster.Data.stage);
-        flow.audio.Music("fight");
+            flow.SourceForSide(1), flow.stageId ?? Roster.Data.stage);
+        StageData stage = StageData.Load(flow.stageId ?? Roster.Data.stage);
+        flow.audio.Music(stage != null && !string.IsNullOrEmpty(stage.music) ? stage.music : "fight");
     }
 
     public Match Match => match;

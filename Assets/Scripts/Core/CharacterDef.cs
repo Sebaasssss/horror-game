@@ -44,9 +44,33 @@ public class MoveEntry
     public bool knockdown;
     public PixelRect hitbox;
     public string sfxWhiff, sfxHit;
+    public ChainEntry[] chains;
+    public bool launcher;
+    // Extra chance (0..1) that a damaging combo finished with this move severs a limb.
+    public float dismember;
 
     public int Total => startup + active + recovery;
     public bool IsThrow => level == "throw";
+}
+
+[Serializable]
+public class ChainEntry
+{
+    public string input;
+    public string move;
+}
+
+// One body state (full, one_arm, no_arms, one_leg, no_legs) with its own animations, moves and hurtboxes.
+[Serializable]
+public class VariantData
+{
+    public string name;
+    public AnimationEntry[] animations;
+    public MoveEntry[] moves;
+    public PixelRect hurtStand, hurtCrouch, hurtAir;
+    public float speedScale = 1f, jumpScale = 1f, damageScale = 1f;
+    public bool canBlock = true, canGrab = true, canJump = true, canCrouch = true;
+    public float stumpX, stumpY;
 }
 
 [Serializable]
@@ -77,6 +101,7 @@ public class CharacterData
     public PixelRect hurtStand, hurtCrouch, hurtAir;
     public string bloodColor, accentColor;
     public float neckX, neckY;
+    public VariantData[] variants;
 }
 
 [Serializable]
@@ -85,6 +110,54 @@ public class RosterData
     public string[] characters;
     public int lockedSlots;
     public string stage;
+    public string[] stages;
+}
+
+// Runtime view of one body state of a character.
+public class VariantDef
+{
+    public readonly VariantData data;
+    private readonly Dictionary<string, AnimationEntry> animations = new Dictionary<string, AnimationEntry>();
+    private readonly Dictionary<string, MoveEntry> moves = new Dictionary<string, MoveEntry>();
+
+    public string Name => data.name;
+
+    public VariantDef(VariantData data)
+    {
+        this.data = data;
+        foreach (AnimationEntry animation in data.animations)
+            animations[animation.name] = animation;
+        if (data.moves != null)
+            foreach (MoveEntry move in data.moves)
+                moves[move.id] = move;
+    }
+
+    public AnimationEntry Anim(string name)
+    {
+        if (animations.TryGetValue(name, out AnimationEntry animation))
+            return animation;
+        return animations.TryGetValue("idle", out animation) ? animation : null;
+    }
+
+    public bool HasAnim(string name) => animations.ContainsKey(name);
+
+    public MoveEntry Move(string id) => id != null && moves.TryGetValue(id, out MoveEntry move) ? move : null;
+
+    public MoveEntry MoveForState(string state)
+    {
+        foreach (MoveEntry move in data.moves)
+            if (move.state == state)
+                return move;
+        return null;
+    }
+
+    public MoveEntry MoveForInput(string input, string state = "stand")
+    {
+        foreach (MoveEntry move in data.moves)
+            if (move.input == input && move.state == state)
+                return move;
+        return null;
+    }
 }
 
 // Runtime view of a character: parsed data plus sprites cut from its atlas.
@@ -96,12 +169,12 @@ public class CharacterDef
     public readonly Sprite thumb;
     public readonly Color bloodColor;
     public readonly Color accentColor;
-    private readonly Dictionary<string, AnimationEntry> animations = new Dictionary<string, AnimationEntry>();
-    private readonly Dictionary<string, MoveEntry> moves = new Dictionary<string, MoveEntry>();
+    private readonly Dictionary<string, VariantDef> variants = new Dictionary<string, VariantDef>();
 
     public string Id => data.id;
     public string Name => data.displayName;
     public StatsEntry Stats => data.stats;
+    public VariantDef Full { get; }
 
     private CharacterDef(CharacterData data, Texture2D atlas, Sprite portrait, Sprite thumb)
     {
@@ -123,10 +196,22 @@ public class CharacterDef
             sprites[i].name = data.id + "_" + entry.name;
         }
 
-        foreach (AnimationEntry animation in data.animations)
-            animations[animation.name] = animation;
-        foreach (MoveEntry move in data.moves)
-            moves[move.id] = move;
+        // Older single-state characters store their kit at the top level.
+        VariantData full = new VariantData
+        {
+            name = "full", animations = data.animations, moves = data.moves,
+            hurtStand = data.hurtStand, hurtCrouch = data.hurtCrouch, hurtAir = data.hurtAir
+        };
+        if (data.variants != null)
+            foreach (VariantData variant in data.variants)
+            {
+                if (variant.name == "full")
+                    full = variant;
+                else
+                    variants[variant.name] = new VariantDef(variant);
+            }
+        Full = new VariantDef(full);
+        variants["full"] = Full;
     }
 
     public static CharacterDef Load(string id)
@@ -145,50 +230,23 @@ public class CharacterDef
         return new CharacterDef(data, atlas, portrait, thumb);
     }
 
-    public AnimationEntry Anim(string name)
+    public VariantDef Variant(string name)
     {
-        if (animations.TryGetValue(name, out AnimationEntry animation))
-            return animation;
-        return animations.TryGetValue("idle", out animation) ? animation : null;
+        return name != null && variants.TryGetValue(name, out VariantDef variant) ? variant : null;
     }
 
-    public bool HasAnim(string name) => animations.ContainsKey(name);
+    public bool HasAnim(string name) => Full.HasAnim(name);
 
-    public Sprite Frame(string animation, int index)
+    public Sprite SpriteAt(int index) => sprites[Mathf.Clamp(index, 0, sprites.Length - 1)];
+
+    public GoreEntry Gore(string part)
     {
-        AnimationEntry entry = Anim(animation);
-        if (entry == null || entry.sprites.Length == 0)
+        if (data.gore == null)
             return null;
-        return sprites[entry.sprites[Mathf.Clamp(index, 0, entry.sprites.Length - 1)]];
-    }
-
-    public MoveEntry Move(string id)
-    {
-        return moves.TryGetValue(id, out MoveEntry move) ? move : null;
-    }
-
-    public MoveEntry MoveForState(string state)
-    {
-        foreach (MoveEntry move in data.moves)
-            if (move.state == state)
-                return move;
+        foreach (GoreEntry entry in data.gore)
+            if (entry.part == part)
+                return entry;
         return null;
-    }
-
-    public MoveEntry MoveForInput(string input)
-    {
-        foreach (MoveEntry move in data.moves)
-            if (move.input == input)
-                return move;
-        return null;
-    }
-
-    public Vector2 HandAnchor(string animation, int index)
-    {
-        AnimationEntry entry = Anim(animation);
-        if (entry != null && entry.anchorX != null && entry.anchorX.Length > index && index >= 0)
-            return new Vector2(entry.anchorX[index], entry.anchorY[index]);
-        return new Vector2(30f, 60f);
     }
 }
 
@@ -203,7 +261,7 @@ public class StageLayer
 [Serializable]
 public class StageData
 {
-    public string id, displayName;
+    public string id, displayName, music;
     public float groundY;
     public StageLayer[] layers;
 

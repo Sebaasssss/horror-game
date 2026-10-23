@@ -23,14 +23,14 @@ public class FighterView
     public void Sync(bool inFront)
     {
         Vector2 snapped = Nodes.Snap(fighter.pos);
-        root.localPosition = snapped;
+        root.localPosition = snapped + new Vector2(0f, fighter.bob);
         body.sprite = fighter.sprite;
         body.enabled = !fighter.hidden;
         body.sortingOrder = inFront ? Layers.FighterFront : Layers.Fighter;
         body.transform.localScale = new Vector3(fighter.facing, 1f, 1f);
         body.transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Round(fighter.rotation / 15f) * 15f);
 
-        float flash = fighter.flashTicks > 0 ? (fighter.flashTicks % 2 == 1 ? 0.8f : 0.3f) : 0f;
+        float flash = fighter.flashTicks > 3 ? (fighter.flashTicks % 2 == 1 ? 0.55f : 0.15f) : 0f;
         body.GetPropertyBlock(block);
         block.SetFloat(FlashId, flash);
         block.SetColor(FlashColorId, fighter.flashColor);

@@ -66,7 +66,25 @@ public class CpuInput : IInputSource
             if (distance > 46f)
                 Hold(toward, false, wait);
             else
-                tap.heavy = true;
+            {
+                // Pick a fatality style: heavy decapitates, kick cuts to pieces, light blows the body apart.
+                float pick = Roll();
+                tap.heavy = pick < 0.34f;
+                tap.kick = pick >= 0.34f && pick < 0.67f;
+                tap.light = pick >= 0.67f;
+            }
+            return;
+        }
+
+        // Continue a connected attack into its chain follow-up.
+        if (self.state == FighterState.Attack && self.moveConnected && self.move != null && self.move.chains != null
+            && self.move.chains.Length > 0 && Roll() < 0.35f + skill * 0.5f)
+        {
+            string next = self.move.chains[random.Next(self.move.chains.Length)].input;
+            tap.light = next == "light";
+            tap.heavy = next == "heavy";
+            tap.kick = next == "kick";
+            wait = 3;
             return;
         }
 
@@ -115,8 +133,13 @@ public class CpuInput : IInputSource
         {
             if (r < 0.28f)
                 tap.light = true;
-            else if (r < 0.46f)
+            else if (r < 0.40f)
                 tap.kick = true;
+            else if (r < 0.46f)
+            {
+                tap.kick = true;
+                Hold(-toward, false, 2);
+            }
             else if (r < 0.58f)
                 tap.heavy = true;
             else if (r < 0.72f)

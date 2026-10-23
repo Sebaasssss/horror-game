@@ -349,6 +349,18 @@ def misc():
             stains.px(x, y, rng.choice(["#5e0710", "#7a0a14", "#4a0006", "#8c0f19"]))
     stains.save("stains.png")
 
+    pool = Img(64, 10)
+    for y in range(10):
+        for x in range(64):
+            dx, dy = (x + 0.5 - 32) / 32, (y + 0.5 - 5) / 5
+            d = dx * dx + dy * dy
+            if d <= 1:
+                pool.px(x, y, "#3a0006" if d > 0.7 else "#6e0710" if d > 0.25 else "#8c0f19")
+    pool.px(20, 3, "#d83a42")
+    pool.px(21, 3, "#d83a42")
+    pool.px(40, 4, "#b01822")
+    pool.save("blood_pool.png")
+
     panel = Img(24, 24)
     panel.rect(1, 1, 22, 22, "#0e090c")
     panel.frame(1, 1, 22, 22, "#5c4a3e")

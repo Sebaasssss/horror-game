@@ -22,6 +22,12 @@ public class Fx
         public Color blood;
     }
 
+    private class PoolDecal
+    {
+        public SpriteRenderer renderer;
+        public float size, target;
+    }
+
     private class SparkAnim
     {
         public SpriteRenderer renderer;
@@ -36,10 +42,12 @@ public class Fx
         public int ticks;
         public Color color;
         public System.Func<Vector2> follow;
+        public int interval;
+        public int age;
     }
 
-    private const int MaxParticles = 900;
-    private const int MaxStains = 900;
+    private const int MaxParticles = 2400;
+    private const int MaxStains = 1600;
 
     private readonly Transform root;
     private readonly Particle[] particles = new Particle[MaxParticles];
@@ -47,6 +55,9 @@ public class Fx
     private readonly List<GorePiece> gore = new List<GorePiece>();
     private readonly List<SparkAnim> sparks = new List<SparkAnim>();
     private readonly List<FountainEmitter> fountains = new List<FountainEmitter>();
+    private readonly List<PoolDecal> pools = new List<PoolDecal>();
+    private Sprite[] gibFrames;
+    private Sprite poolSprite;
     private readonly System.Random random = new System.Random(1337);
     private int nextParticle;
     private int nextStain;
@@ -66,6 +77,9 @@ public class Fx
         hitFrames = Art.Sheet("UI/fx_hit", 32, 32, new Vector2(0.5f, 0.5f));
         blockFrames = Art.Sheet("UI/fx_block", 32, 32, new Vector2(0.5f, 0.5f));
         bloodFrames = Art.Sheet("UI/fx_blood", 32, 32, new Vector2(0.5f, 0.5f));
+        gibFrames = Resources.Load<Texture2D>("UI/gibs") != null
+            ? Art.Sheet("UI/gibs", 24, 24, new Vector2(0.5f, 0.5f)) : new Sprite[0];
+        poolSprite = Art.Sprite("UI/blood_pool", new Vector2(0.5f, 0.5f));
     }
 
     private float Range(float min, float max) => min + (float)random.NextDouble() * (max - min);
@@ -119,6 +133,49 @@ public class Fx
         fountains.Add(new FountainEmitter { point = point, ticks = ticks, color = color, follow = follow });
     }
 
+    // Endless slow drip (a bleeding stump); follow returns null to stop it.
+    public void Drip(System.Func<Vector2?> follow, Color color, int interval)
+    {
+        fountains.Add(new FountainEmitter
+        {
+            ticks = -1, color = color, interval = interval,
+            follow = () => follow() ?? new Vector2(float.NaN, float.NaN)
+        });
+    }
+
+    // Chunks of flesh, bone and organs flying out of a wound.
+    public void Gibs(Vector2 at, int count, float direction, Color blood)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            Vector2 vel = new Vector2(direction * Range(0.6f, 3.6f) + Range(-1.4f, 1.4f), Range(2.5f, 7.5f));
+            Sprite sprite = gibFrames.Length > 0 ? gibFrames[random.Next(gibFrames.Length)] : null;
+            SpriteRenderer renderer = sprite != null
+                ? Nodes.Sprite(root, "gib", sprite, at, Layers.Gore + 1)
+                : Nodes.Rect(root, "gib", at, new Vector2(random.Next(2, 4), random.Next(2, 4)), blood * 0.8f, Layers.Gore + 1);
+            if (sprite != null)
+            {
+                float scale = Range(0.45f, 0.85f);
+                renderer.transform.localScale = new Vector3(scale, scale, 1f);
+            }
+            gore.Add(new GorePiece
+            {
+                renderer = renderer, pos = at, vel = vel, spin = Range(-24f, 24f), bleed = 30, blood = blood
+            });
+        }
+    }
+
+    // A pool of blood on the floor that spreads out over time.
+    public void Pool(float x, float width, Color color)
+    {
+        if (poolSprite == null)
+            return;
+        SpriteRenderer renderer = Nodes.Sprite(root, "pool", poolSprite, new Vector2(Mathf.Round(x), -2f), Layers.Stains + 1,
+            new Color(color.r * 0.8f, color.g * 0.8f, color.b * 0.8f, 1f));
+        renderer.transform.localScale = new Vector3(0.1f, 1f, 1f);
+        pools.Add(new PoolDecal { renderer = renderer, size = 0.1f, target = width / 64f });
+    }
+
     public void Spark(Vector2 at, string kind)
     {
         Sprite[] frames = kind == "block" ? blockFrames : kind == "blood" ? bloodFrames : hitFrames;
@@ -161,6 +218,17 @@ public class Fx
         {
             FountainEmitter f = fountains[i];
             Vector2 point = f.follow != null ? f.follow() : f.point;
+            if (f.ticks < 0)
+            {
+                if (float.IsNaN(point.x))
+                {
+                    fountains.RemoveAt(i);
+                    continue;
+                }
+                if (++f.age % Mathf.Max(1, f.interval) == 0)
+                    Emit(point + new Vector2(Range(-1.5f, 1.5f), 0f), new Vector2(Range(-0.6f, 0.6f), Range(-0.2f, 1.4f)), f.color);
+                continue;
+            }
             int count = f.ticks > 60 ? 4 : f.ticks > 25 ? 2 : 1;
             for (int k = 0; k < count; k++)
                 Emit(point, new Vector2(Range(-0.9f, 0.9f), Range(2.2f, 4.6f) * Mathf.Min(1f, f.ticks / 50f + 0.4f)),
@@ -188,6 +256,14 @@ public class Fx
                 continue;
             }
             p.renderer.transform.localPosition = Nodes.Snap(p.pos);
+        }
+
+        foreach (PoolDecal pool in pools)
+        {
+            if (pool.size >= pool.target)
+                continue;
+            pool.size = Mathf.Min(pool.target, pool.size + 0.012f);
+            pool.renderer.transform.localScale = new Vector3(Mathf.Round(pool.size * 64f) / 64f, 1f, 1f);
         }
 
         for (int i = sparks.Count - 1; i >= 0; i--)
@@ -277,6 +353,9 @@ public class Fx
         foreach (SparkAnim spark in sparks)
             Nodes.Destroy(spark.renderer.gameObject);
         sparks.Clear();
+        foreach (PoolDecal pool in pools)
+            Nodes.Destroy(pool.renderer.gameObject);
+        pools.Clear();
         fountains.Clear();
         foreach (Particle p in particles)
             if (p.alive)

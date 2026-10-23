@@ -112,3 +112,6 @@ InitTestScene*.unity*
 Tools/.venv/
 Tools/out/
 Tools/art_src/**/codex_run.log
+Tools/art_src/**/*.png
+!Tools/art_src/templates/*.png
+Tools/art_src/**/codex_*.log

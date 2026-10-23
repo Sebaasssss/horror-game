@@ -2,7 +2,9 @@ using UnityEngine;
 
 public enum MatchPhase { Intro, Fight, KO, RoundOver, FinishHim, Fatality, MatchOver, Done }
 
-// Best-of-three fight: rounds, timer, hit resolution, throws, KO / FINISH HIM / FATALITY flow.
+public enum FatalityKind { Decapitation, Pieces, Explosion }
+
+// Best-of-three fight: rounds, timer, hit resolution, dismemberment, throws, KO / FINISH HIM / FATALITY flow.
 public class Match
 {
     public readonly Fighter p1, p2;
@@ -14,6 +16,7 @@ public class Match
     private readonly RetroDisplay display;
     private readonly IInputSource input1, input2;
     private readonly Transform worldRoot;
+    private readonly System.Random random = new System.Random(4242);
 
     public MatchPhase phase = MatchPhase.Intro;
     public int phaseTick;
@@ -21,12 +24,13 @@ public class Match
     public int timer = GameConfig.RoundSeconds;
     public Fighter winner, loser;
     public bool fatality;
+    public FatalityKind fatalityKind;
+    public int dismemberments;
     private int timerTick;
     private int hitstop;
     private int slowTicks;
     private int frame;
     private float cameraX;
-    private bool finishPending;
 
     public bool Finished => phase == MatchPhase.Done;
 
@@ -61,6 +65,8 @@ public class Match
     {
         audio?.Sfx(key, volume);
     }
+
+    private float Range(float min, float max) => min + (float)random.NextDouble() * (max - min);
 
     // ------------------------------------------------------------------ main loop
 
@@ -99,6 +105,11 @@ public class Match
             Clamp();
             if (fight || finish)
                 CheckHits();
+            if (fight)
+            {
+                Bleed(p1);
+                Bleed(p2);
+            }
         }
 
         TickPhase();
@@ -119,6 +130,14 @@ public class Match
         view2.Sync(!p1Front && (p2.state == FighterState.Attack || p2.state == FighterState.Throwing));
     }
 
+    // Mutilated fighters slowly bleed out (never to death on their own).
+    private void Bleed(Fighter fighter)
+    {
+        if (fighter.limbsLost == 0 || frame % 24 != 0 || fighter.health <= 1)
+            return;
+        fighter.health = Mathf.Max(1, fighter.health - fighter.limbsLost);
+    }
+
     // ------------------------------------------------------------------ rounds
 
     private void StartRound()
@@ -127,11 +146,11 @@ public class Match
         p2.ResetForRound(70f, -1);
         fx.ClearRound();
         hud.ClearBanners();
+        hud.ClearSplatter();
         hud.ResetTrails();
         timer = GameConfig.RoundSeconds;
         timerTick = 0;
         winner = loser = null;
-        finishPending = false;
         cameraX = 0f;
         SetPhase(MatchPhase.Intro);
     }
@@ -183,10 +202,16 @@ public class Match
                 break;
 
             case MatchPhase.FinishHim:
-                if (phaseTick > GameConfig.FinishHimTicks && phase == MatchPhase.FinishHim)
+                if (loser.state != FighterState.Dizzy && loser.state != FighterState.Thrown)
+                {
+                    loser.SetState(FighterState.Dizzy);
+                    loser.PlayAnim("dizzy", true);
+                }
+                if (phaseTick > GameConfig.FinishHimTicks)
                 {
                     loser.SetState(FighterState.KO);
                     loser.PlayAnim("ko", true);
+                    fx.Pool(loser.pos.x, 60f, loser.def.bloodColor);
                     Sfx("body_fall");
                     EndMatchNormally();
                 }
@@ -197,11 +222,14 @@ public class Match
                 {
                     hud.ShowBanner("FATALITY", "blood", 220, 22f, 1.5f);
                     Sfx("announcer_fatality");
+                    Sfx("fatality_sting");
                 }
                 if (phaseTick == 150)
                     Celebrate(winner);
                 if (phaseTick == 175)
                     hud.ShowBanner(winner.def.Name + " WINS", "medium", 180, -8f);
+                if (phaseTick == 180)
+                    Sfx("announcer_wins_" + winner.def.Id);
                 if (phaseTick >= 380)
                     SetPhase(MatchPhase.Done);
                 break;
@@ -242,12 +270,17 @@ public class Match
         }
         winner = p1.health > p2.health ? p1 : p2;
         loser = winner.opponent;
+        if (winner.roundWins + 1 >= GameConfig.RoundsToWin)
+        {
+            StartFinishHim();
+            return;
+        }
         loser.SetState(FighterState.KO);
         loser.PlayAnim("ko", true);
         winner.roundWins++;
         Celebrate(winner);
         hud.ShowBanner(winner.def.Name + " WINS", "medium", 140, -12f);
-        SetPhase(winner.roundWins >= GameConfig.RoundsToWin ? MatchPhase.MatchOver : MatchPhase.RoundOver);
+        SetPhase(MatchPhase.RoundOver);
     }
 
     public void OnKnockout(Fighter victim, Fighter killer)
@@ -256,7 +289,12 @@ public class Match
             return;
         loser = victim;
         winner = killer;
-        finishPending = killer.roundWins + 1 >= GameConfig.RoundsToWin;
+        // Winning the match goes straight to FINISH HIM: no knockdown, no waiting.
+        if (killer.roundWins + 1 >= GameConfig.RoundsToWin)
+        {
+            StartFinishHim();
+            return;
+        }
         SetPhase(MatchPhase.KO);
         slowTicks = 60;
         hud.ShowBanner("K.O.", "large", 100);
@@ -264,28 +302,33 @@ public class Match
         Sfx("announcer_ko");
     }
 
+    private void StartFinishHim()
+    {
+        loser.health = 0;
+        loser.rotation = 0f;
+        loser.vel = Vector2.zero;
+        loser.pushVel = 0f;
+        loser.pos.y = 0f;
+        loser.move = null;
+        loser.SetState(FighterState.Dizzy);
+        loser.PlayAnim("dizzy", true);
+        if (winner.state == FighterState.Throwing || winner.state == FighterState.Victory)
+            winner.ReturnToNeutral();
+        hitstop = 18;
+        fx.Shake(0.6f);
+        hud.Flash(new Color(0.7f, 0f, 0f), 12);
+        hud.ShowBanner("FINISH HIM!", "blood", 140, 14f, 1f);
+        Sfx("announcer_finish_him");
+        SetPhase(MatchPhase.FinishHim);
+    }
+
     private void TickKnockout()
     {
         bool down = loser.state == FighterState.Lying || loser.state == FighterState.KO;
         if (!down && phaseTick < 240)
             return;
-
-        if (finishPending)
-        {
-            if (phaseTick < 80)
-                return;
-            // The loser staggers back up for the final blow.
-            loser.SetState(FighterState.Dizzy);
-            loser.PlayAnim("dizzy", true);
-            loser.rotation = 0f;
-            loser.pos.y = 0f;
-            loser.vel = Vector2.zero;
-            winner.ReturnToNeutral();
-            hud.ShowBanner("FINISH HIM!", "blood", 120, 14f, 1f);
-            Sfx("announcer_finish_him");
-            SetPhase(MatchPhase.FinishHim);
-            return;
-        }
+        if (phaseTick == 1 || (down && phaseTick % 200 == 0))
+            fx.Pool(loser.pos.x, 46f, loser.def.bloodColor);
 
         if (phaseTick >= 110)
         {
@@ -320,53 +363,155 @@ public class Match
 
     // ------------------------------------------------------------------ fatality
 
+    public static FatalityKind KindFor(MoveEntry move)
+    {
+        string id = move != null ? move.id : "";
+        if (id == "heavy" || id == "special" || id == "slash_side" || id == "air" || id == "uppercut")
+            return FatalityKind.Decapitation;
+        if (id == "kick" || id == "roundhouse" || id == "sweep" || id == "air_kick" || id == "crouch_light")
+            return FatalityKind.Pieces;
+        return FatalityKind.Explosion;
+    }
+
     private void Fatality(Fighter killer, Fighter victim, MoveEntry move)
     {
         fatality = true;
+        fatalityKind = KindFor(move);
+        hud.ClearBanners();
         SetPhase(MatchPhase.Fatality);
         killer.roundWins++;
-        hitstop = 22;
-        fx.Shake(1.3f);
+        hitstop = 24;
+        fx.Shake(1.5f);
         hud.Flash(new Color(0.8f, 0f, 0f), 18);
+        hud.Splatter(26, victim.def.bloodColor);
         Sfx("gore_rip");
+        Sfx("fatality_gore");
         Sfx("scream_" + victim.def.Id);
 
-        bool decapitate = move != null && (move.id == "heavy" || move.id == "special" || move.id == "air")
-                          && victim.def.HasAnim("headless");
         Color blood = victim.def.bloodColor;
-        GoreEntry[] parts = victim.def.data.gore;
-        if (decapitate)
+        float away = killer.facing;
+        if (fatalityKind == FatalityKind.Decapitation && victim.def.HasAnim("headless"))
         {
             victim.SetState(FighterState.Dead);
             victim.PlayAnim("headless", true);
-            foreach (GoreEntry part in parts)
-                if (part.part == "head")
-                    fx.Gore(victim, part, new Vector2(killer.facing * 2.6f, 6.5f), killer.facing * -14f);
-            Vector2 neck = victim.pos + new Vector2(victim.def.data.neckX * victim.facing, victim.def.data.neckY);
-            fx.Blood(neck, Vector2.up, 70, blood, 3.5f);
+            GoreEntry head = victim.def.Gore("head");
+            if (head != null)
+                fx.Gore(victim, head, new Vector2(away * 2.8f, 7f), away * -16f);
+            Vector2 neck = victim.NeckPoint;
+            fx.Blood(neck, Vector2.up, 160, blood, 4f);
+            fx.Gibs(neck, 6, away, blood);
             Fighter body = victim;
             int age = 0;
-            fx.Fountain(neck, blood, 130, () =>
+            fx.Fountain(neck, blood, 170, () =>
             {
                 age++;
-                float sink = Mathf.Clamp01((age - 30) / 50f);
+                float sink = Mathf.Clamp01((age - 30) / 60f);
                 return body.pos + new Vector2(body.def.data.neckX * body.facing * (1f - sink * 2f),
                     Mathf.Lerp(body.def.data.neckY, 10f, sink));
             });
+            fx.Pool(victim.pos.x, 90f, blood);
+            return;
+        }
+
+        Vector2 centre = victim.pos + new Vector2(0f, 46f);
+        GoreEntry[] parts = victim.def.data.gore ?? new GoreEntry[0];
+        if (fatalityKind == FatalityKind.Pieces)
+        {
+            // Cut into chunks: the big parts fly, guts spill, blood everywhere.
+            if (victim.def.HasAnim("bisected"))
+            {
+                victim.SetState(FighterState.Dead);
+                victim.PlayAnim("bisected", true);
+                foreach (GoreEntry part in parts)
+                    if (part.part == "guts" || part.part == "spine" || part.part == "arm_back")
+                        fx.Gore(victim, part, new Vector2(away * Range(1f, 3f), Range(3f, 6f)), Range(-14f, 14f));
+            }
+            else
+            {
+                victim.SetState(FighterState.Exploded);
+                victim.hidden = true;
+                foreach (GoreEntry part in parts)
+                    fx.Gore(victim, part, new Vector2(away * Range(0.4f, 2.6f) + Range(-1f, 1f), Range(3f, 6.5f)),
+                        Range(-12f, 12f));
+            }
+            fx.Burst(centre, 420, blood, 3.6f);
+            fx.Gibs(centre, 14, away, blood);
+            fx.Pool(victim.pos.x, 110f, blood);
+            return;
+        }
+
+        // A thousand pieces: every part, a storm of gibs and a wall of blood.
+        victim.SetState(FighterState.Exploded);
+        victim.hidden = true;
+        foreach (GoreEntry part in parts)
+        {
+            float dir = part.x * victim.facing >= 0 ? 1f : -1f;
+            fx.Gore(victim, part, new Vector2(dir * Range(1.5f, 4.5f) + away, Range(5f, 10f)), Range(-24f, 24f));
+        }
+        fx.Gibs(centre, 46, 0f, blood);
+        fx.Burst(centre, 900, blood, 5.2f);
+        fx.Pool(victim.pos.x, 140f, blood);
+        hud.Splatter(30, blood);
+        Sfx("explosion_gore");
+    }
+
+    // ------------------------------------------------------------------ dismemberment
+
+    // High-damage combos can sever a limb: arms free-then-weapon, legs left-then-right.
+    private void TryDismember(Fighter attacker, Fighter defender, MoveEntry move, int damage, bool counter)
+    {
+        if (defender.limbsLost >= 2 || defender.health <= 0 || phase != MatchPhase.Fight)
+            return;
+        float chance = move.dismember;
+        if (defender.comboTaken >= 3)
+            chance += 0.18f + 0.12f * (defender.comboTaken - 3);
+        if (damage >= 120)
+            chance += 0.12f;
+        if (counter)
+            chance += 0.1f;
+        if (attacker.chainCount >= 2)
+            chance += 0.15f;
+        if (Range(0f, 1f) >= Mathf.Min(0.8f, chance))
+            return;
+
+        string current = defender.kit.Name;
+        string next;
+        if (current == "full")
+        {
+            bool armFirst = random.NextDouble() < 0.5;
+            next = armFirst ? "one_arm" : "one_leg";
+            if (defender.def.Variant(next) == null)
+                next = armFirst ? "one_leg" : "one_arm";
         }
         else
-        {
-            victim.SetState(FighterState.Exploded);
-            victim.hidden = true;
-            Vector2 centre = victim.pos + new Vector2(0f, 46f);
-            foreach (GoreEntry part in parts)
-            {
-                float dir = part.x * victim.facing >= 0 ? 1f : -1f;
-                Vector2 vel = new Vector2(dir * Random.Range(1.2f, 3.6f) + killer.facing * 1.2f, Random.Range(4f, 8f));
-                fx.Gore(victim, part, vel, Random.Range(-18f, 18f));
-            }
-            fx.Burst(centre, 320, blood, 4.2f);
-        }
+            next = current == "one_arm" ? "no_arms" : current == "one_leg" ? "no_legs" : null;
+        VariantDef variant = defender.def.Variant(next);
+        if (variant == null)
+            return;
+
+        string part = next == "one_arm" ? "arm_back" : next == "no_arms" ? "arm_front"
+            : next == "one_leg" ? "leg_back" : "leg_front";
+        defender.SetVariant(variant);
+        dismemberments++;
+        GoreEntry limb = defender.def.Gore(part);
+        Color blood = defender.def.bloodColor;
+        if (limb != null)
+            fx.Gore(defender, limb, new Vector2(attacker.facing * Range(2f, 3.5f), Range(4.5f, 7f)), Range(-20f, 20f));
+        Vector2 stump = defender.StumpPoint;
+        fx.Blood(stump, new Vector2(attacker.facing, 0.8f), 140, blood, 4f);
+        fx.Gibs(stump, 5, attacker.facing, blood);
+        Fighter victim = defender;
+        VariantDef state = variant;
+        fx.Fountain(stump, blood, 60, () => victim.StumpPoint);
+        fx.Drip(() => victim.kit == state && victim.health > 0 ? victim.StumpPoint : (Vector2?)null, blood, 3);
+        hud.Splatter(12, blood);
+        hud.ShowBanner("DISMEMBERED!", "blood", 70, 30f, 1f);
+        hud.Flash(new Color(0.7f, 0f, 0f), 8);
+        hitstop = 20;
+        fx.Shake(1f);
+        Sfx("gore_rip");
+        Sfx("dismember");
+        Sfx("scream_" + defender.def.Id);
     }
 
     // ------------------------------------------------------------------ hits
@@ -386,10 +531,7 @@ public class Match
 
         if (move.IsThrow)
         {
-            if (!defender.CanBeThrown)
-                return;
-            Rect body = defender.def.data.hurtStand.ToWorld(defender.pos, defender.facing);
-            if (!hitbox.Overlaps(body))
+            if (!defender.CanBeThrown || !hitbox.Overlaps(defender.StandBox))
                 return;
             attacker.moveConnected = true;
             attacker.BeginThrow(defender);
@@ -430,33 +572,56 @@ public class Match
 
     private void ApplyDamage(Fighter attacker, Fighter defender, MoveEntry move, Vector2 contact)
     {
-        float scale = defender.comboTaken <= 1 ? 1f : Mathf.Max(0.45f, 1f - 0.15f * (defender.comboTaken - 1));
-        int damage = Mathf.Max(1, Mathf.RoundToInt(move.damage * scale));
+        bool counter = defender.InStartup;
+        float scale = defender.comboTaken <= 1 ? 1f : Mathf.Max(0.45f, 1f - 0.12f * (defender.comboTaken - 1));
+        float variance = Range(0.88f, 1.12f);
+        bool critical = Range(0f, 1f) < 0.06f;
+        float total = move.damage * scale * variance * attacker.kit.data.damageScale * (counter ? 1.3f : 1f)
+                      * (critical ? 1.5f : 1f) * (defender.Mutilated ? 1.1f : 1f);
+        int damage = Mathf.Max(1, Mathf.RoundToInt(total));
         defender.health = Mathf.Max(0, defender.health - damage);
         defender.comboTaken++;
         defender.flashTicks = 6;
-        defender.flashColor = Color.white;
+        defender.flashColor = critical ? new Color(1f, 0.3f, 0.3f) : Color.white;
 
         bool lethal = defender.health <= 0;
-        if (lethal || move.knockdown || defender.Airborne)
-            defender.Launch(attacker.facing * (lethal ? 3.2f : 2.4f), lethal ? 6.2f : 5f);
-        else
-            defender.EnterHitstun(move.hitstun, move.level);
-        PushApart(attacker, defender, move.pushback * 0.3f);
+        bool finishesMatch = lethal && attacker.roundWins + 1 >= GameConfig.RoundsToWin;
+        if (!finishesMatch)
+        {
+            if (lethal || move.knockdown || move.launcher || defender.Airborne)
+                defender.Launch(attacker.facing * (lethal ? 3.2f : 2.4f), lethal ? 6.2f : move.launcher ? 7f : 5f);
+            else
+                defender.EnterHitstun(move.hitstun, move.level);
+            PushApart(attacker, defender, move.pushback * 0.3f);
+        }
 
-        bool heavy = move.damage >= 100;
+        bool heavy = move.damage >= 100 || critical;
+        Color blood = defender.def.bloodColor;
         fx.Spark(contact, "hit");
-        fx.Blood(contact, new Vector2(attacker.facing, 0.5f), move.blood + (lethal ? 30 : 0), defender.def.bloodColor,
-            heavy ? 3.4f : 2.4f);
-        fx.Shake(move.shake + (lethal ? 0.9f : 0f));
-        hitstop = move.hitstop + (lethal ? 14 : 0);
+        fx.Spark(contact, "blood");
+        int drops = move.blood * 3 + (heavy ? 40 : 10) + (lethal ? 80 : 0) + defender.comboTaken * 6;
+        fx.Blood(contact, new Vector2(attacker.facing, 0.6f), drops, blood, heavy ? 3.8f : 2.8f);
+        if (heavy)
+        {
+            fx.Gibs(contact, critical ? 4 : 2, attacker.facing, blood);
+            hud.Splatter(critical ? 8 : 3, blood);
+        }
+        fx.Shake(move.shake + (lethal ? 0.9f : 0f) + (critical ? 0.4f : 0f));
+        hitstop = move.hitstop + (lethal ? 14 : 0) + (critical ? 6 : 0);
         Sfx(move.sfxHit);
-        if (heavy || lethal || Random.value < 0.35f)
+        Sfx("blood_splat", 0.6f);
+        if (heavy || lethal || Range(0f, 1f) < 0.4f)
             Sfx("pain_" + defender.def.Id, 0.8f);
         hud.Combo(attacker, defender.comboTaken);
+        if (critical)
+            hud.Callout(attacker, "CRITICAL!");
+        else if (counter)
+            hud.Callout(attacker, "COUNTER!");
 
         if (lethal)
             OnKnockout(defender, attacker);
+        else
+            TryDismember(attacker, defender, move, damage, counter);
     }
 
     private void PushApart(Fighter attacker, Fighter defender, float amount)
@@ -479,15 +644,25 @@ public class Match
 
     public void PlaceThrowVictim(Fighter thrower, Fighter victim, int tick)
     {
-        Vector2 anchor = thrower.def.HandAnchor(thrower.FrameAnim, thrower.FrameIndex);
+        Vector2 anchor = thrower.HandAnchor();
         Vector2 hand = thrower.pos + new Vector2(anchor.x * thrower.facing, anchor.y);
-        float lift = tick < 10 ? 0f : (tick - 10) / 14f;
-        victim.rotation = -victim.facing * 100f * lift;
-        victim.SetFrame(lift > 0f ? "knockdown" : "hurt", 0);
-        Vector2 grip = Quaternion.Euler(0f, 0f, victim.rotation) * new Vector2(0f, 48f);
-        victim.pos = hand - grip;
+        float lift = tick < 6 ? 0f : Mathf.Clamp01((tick - 6) / 18f);
+        if (victim.kit.HasAnim("thrown"))
+        {
+            // Drawn "thrown" frames already show the pose; only position the body under the hand.
+            victim.rotation = 0f;
+            victim.SetFrame("thrown", lift <= 0f ? 0 : lift < 0.6f ? 1 : 2);
+            victim.pos = hand - new Vector2(0f, lift < 0.6f ? 56f : 40f);
+        }
+        else
+        {
+            victim.rotation = -victim.facing * 100f * lift;
+            victim.SetFrame(lift > 0f ? "knockdown" : "hurt", 0);
+            Vector2 grip = Quaternion.Euler(0f, 0f, victim.rotation) * new Vector2(0f, 48f);
+            victim.pos = hand - grip;
+        }
         victim.pos.y = Mathf.Max(0f, victim.pos.y);
-        if (tick == 10)
+        if (tick == 8)
             Sfx("grunt_" + thrower.def.Id, 0.8f);
     }
 
@@ -500,11 +675,14 @@ public class Match
             return;
         }
         MoveEntry move = thrower.move;
-        victim.health = Mathf.Max(0, victim.health - (move != null ? move.damage : 120));
-        victim.Launch(thrower.facing * 3.4f, 5.6f);
+        int damage = Mathf.RoundToInt((move != null ? move.damage : 120) * Range(0.9f, 1.1f));
+        victim.health = Mathf.Max(0, victim.health - damage);
+        bool finishesMatch = victim.health <= 0 && thrower.roundWins + 1 >= GameConfig.RoundsToWin;
+        if (!finishesMatch)
+            victim.Launch(thrower.facing * 3.4f, 5.6f);
         victim.flashTicks = 6;
-        fx.Shake(0.6f);
-        fx.Blood(victim.pos + new Vector2(0f, 40f), new Vector2(thrower.facing, 1f), 10, victim.def.bloodColor);
+        fx.Shake(0.7f);
+        fx.Blood(victim.pos + new Vector2(0f, 40f), new Vector2(thrower.facing, 1f), 40, victim.def.bloodColor, 3f);
         hitstop = 6;
         Sfx("throw");
         Sfx("pain_" + victim.def.Id, 0.8f);
@@ -512,11 +690,17 @@ public class Match
             OnKnockout(victim, thrower);
     }
 
+    public void OnHopLanded(Fighter fighter)
+    {
+        Sfx("land", 0.45f);
+        fx.Blood(fighter.StumpPoint, Vector2.down, 6, fighter.def.bloodColor, 1.2f);
+    }
+
     public void OnFighterLanded(Fighter fighter)
     {
         Sfx("body_fall");
         fx.Shake(0.25f);
-        fx.Blood(fighter.pos + new Vector2(0f, 6f), Vector2.up, 4, fighter.def.bloodColor, 1.4f);
+        fx.Blood(fighter.pos + new Vector2(0f, 6f), Vector2.up, 14, fighter.def.bloodColor, 1.6f);
     }
 
     // ------------------------------------------------------------------ spacing

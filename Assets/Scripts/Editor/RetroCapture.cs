@@ -65,6 +65,10 @@ public static class RetroCapture
         Step(flow, 20);
         Save("03_select");
 
+        flow.Go(new StageSelectScreen(), true);
+        Step(flow, 20);
+        Save("03b_stage_select");
+
         flow.pick1 = Roster.Find("ghost");
         flow.pick2 = Roster.Find("jason");
         flow.Go(new VersusScreen(), true);
@@ -80,10 +84,11 @@ public static class RetroCapture
         Transform matchRoot = Nodes.Group(root.transform, "Match World");
         CpuInput cpu1 = new CpuInput(0.9f, 11);
         CpuInput cpu2 = new CpuInput(0.9f, 23);
-        Match match = new Match(matchRoot, display, audio, flow.pick1, flow.pick2, cpu1, cpu2, "fallback");
+        Match match = new Match(matchRoot, display, audio, flow.pick1, flow.pick2, cpu1, cpu2, "utez");
         MatchPhase lastPhase = match.phase;
         int hits = 0, lastHealth = match.p1.health + match.p2.health;
         int shots = 0;
+        int lastDismember = 0;
         for (int t = 0; t < 60 * 60 * 6 && !match.Finished; t++)
         {
             match.Tick();
@@ -98,6 +103,17 @@ public static class RetroCapture
                 }
             }
             lastHealth = health;
+            if (match.dismemberments != lastDismember)
+            {
+                lastDismember = match.dismemberments;
+                Log($"t={t} dismember #{lastDismember}: P1 {match.p1.kit.Name} P2 {match.p2.kit.Name}");
+                for (int k = 0; k < 24; k++)
+                    match.Tick();
+                Save("15_dismember_" + lastDismember);
+                for (int k = 0; k < 60; k++)
+                    match.Tick();
+                Save("16_mutilated_" + lastDismember);
+            }
 
             if (t == 20 || t == 90)
                 Save("05_intro_" + t);
@@ -123,7 +139,7 @@ public static class RetroCapture
                 }
             }
         }
-        Log($"match finished={match.Finished} winner={(match.winner != null ? match.winner.def.Id : "none")} fatality={match.fatality} hits={hits}");
+        Log($"match finished={match.Finished} winner={(match.winner != null ? match.winner.def.Id : "none")} fatality={match.fatality} kind={match.fatalityKind} dismemberments={match.dismemberments} hits={hits}");
         Fighter winner = match.winner ?? match.p1;
         match.Dispose();
         flow.Go(new ResultsScreen(winner.def, winner.index, match.fatality), true);

@@ -2,16 +2,21 @@ using UnityEngine;
 
 public enum FighterState
 {
-    Intro, Idle, Walk, Crouch, Jump, Attack, BlockStand, BlockCrouch, Hitstun, Launched, Lying, GetUp,
+    Intro, Idle, Walk, Crouch, Jump, Land, Attack, BlockStand, BlockCrouch, Hitstun, Launched, Lying, GetUp,
     Throwing, Thrown, Dizzy, KO, Victory, Dead, Exploded
 }
 
 // Simulation of one fighter, advanced in fixed 60 Hz ticks by Match. Positions are in pixels, y = 0 is the floor.
+// `kit` is the current body state (full, one_arm, no_arms, one_leg, no_legs): it owns animations, moves and boxes.
 public class Fighter
 {
+    private const int BufferTicks = 10;
+
     public readonly CharacterDef def;
     public readonly int index;
     public Fighter opponent;
+    public VariantDef kit;
+    public int limbsLost;
 
     public Vector2 pos;
     public Vector2 vel;
@@ -27,7 +32,10 @@ public class Fighter
     public MoveEntry move;
     public int moveTick;
     public bool moveConnected;
+    public int chainCount;
     private bool airAttackUsed;
+    private string bufferedAttack;
+    private int bufferAge;
 
     public int comboTaken;
     public int juggleCount;
@@ -38,6 +46,9 @@ public class Fighter
     public Fighter throwVictim;
 
     public Sprite sprite;
+    // Purely visual vertical offset (hopping on one leg / bouncing on the torso).
+    public float bob;
+    private int hopTick;
     private AnimationEntry anim;
     private int animIndex;
     private int animTick;
@@ -48,6 +59,7 @@ public class Fighter
     {
         this.def = def;
         this.index = index;
+        kit = def.Full;
         health = def.Stats.health;
         PlayAnim("idle", true);
     }
@@ -55,6 +67,7 @@ public class Fighter
     public int MaxHealth => def.Stats.health;
     public bool Airborne => pos.y > 0.01f || vel.y > 0f;
     public bool IsDown => state == FighterState.Launched || state == FighterState.Lying || state == FighterState.GetUp;
+    public bool Mutilated => kit != def.Full;
     public string FrameAnim => frameAnim;
     public int FrameIndex => frameIndex;
 
@@ -65,15 +78,19 @@ public class Fighter
     public bool IsThreat => state == FighterState.Attack && move != null && !move.IsThrow &&
                             moveTick < move.startup + move.active;
 
+    public bool InStartup => state == FighterState.Attack && move != null && moveTick < move.startup;
+
     public bool Neutral => state == FighterState.Idle || state == FighterState.Walk || state == FighterState.Crouch ||
                            ((state == FighterState.BlockStand || state == FighterState.BlockCrouch) && stunTicks <= 0);
 
     public bool Crouching => state == FighterState.Crouch || state == FighterState.BlockCrouch ||
                              (state == FighterState.Attack && move != null && move.state == "crouch") ||
-                             (state == FighterState.Hitstun && frameIndex == 2 && frameAnim == "hurt");
+                             (state == FighterState.Hitstun && frameIndex >= 4 && frameAnim == "hurt");
 
     public void ResetForRound(float x, int facingDirection)
     {
+        kit = def.Full;
+        limbsLost = 0;
         pos = new Vector2(x, 0f);
         vel = Vector2.zero;
         pushVel = 0f;
@@ -90,10 +107,29 @@ public class Fighter
         hidden = false;
         throwVictim = null;
         airAttackUsed = false;
-        PlayAnim("idle", true);
+        bufferedAttack = null;
+        PlayAnim(kit.HasAnim("intro") ? "intro" : "idle", true);
+    }
+
+    // Switches body state after losing a limb; keeps the fighter in a sensible pose for the new kit.
+    public void SetVariant(VariantDef variant)
+    {
+        kit = variant;
+        limbsLost++;
+        move = null;
+        if (!kit.data.canJump)
+        {
+            pos.y = 0f;
+            vel.y = 0f;
+        }
+        SetState(FighterState.Hitstun);
+        stunTicks = 24;
+        SetFrame("hurt", 0);
     }
 
     // ------------------------------------------------------------------ state
+
+    public bool Hops => kit.Name == "one_leg" || kit.Name == "no_legs";
 
     public void SetState(FighterState next)
     {
@@ -106,6 +142,12 @@ public class Fighter
         stateTick++;
         if (flashTicks > 0)
             flashTicks--;
+        if (state != FighterState.Walk)
+        {
+            bob = Mathf.Max(0f, bob - 2f);
+            hopTick = 0;
+        }
+        BufferInput();
 
         switch (state)
         {
@@ -123,6 +165,10 @@ public class Fighter
             case FighterState.BlockCrouch:
                 TickNeutral(match);
                 break;
+            case FighterState.Land:
+                if (stateTick >= 5)
+                    ReturnToNeutral();
+                break;
             case FighterState.Jump:
                 TickJump(match);
                 break;
@@ -134,17 +180,19 @@ public class Fighter
                     ReturnToNeutral();
                 break;
             case FighterState.Launched:
-                SetFrame("knockdown", vel.y > 0f ? 0 : 1);
+                SetFrame("knockdown", vel.y > 1f ? 0 : vel.y > -2f ? 1 : 2);
                 break;
             case FighterState.Lying:
+                SetFrame("knockdown", stateTick < 8 ? 3 : 4);
                 if (--stunTicks <= 0 && health > 0)
                 {
                     SetState(FighterState.GetUp);
-                    stunTicks = 18;
-                    SetFrame("knockdown", 3);
+                    stunTicks = 20;
+                    PlayAnim("getup", true);
                 }
                 break;
             case FighterState.GetUp:
+                AdvanceAnimOver("getup", 20);
                 if (--stunTicks <= 0)
                     ReturnToNeutral();
                 break;
@@ -152,6 +200,42 @@ public class Fighter
                 TickThrowing(match);
                 break;
         }
+    }
+
+    private void BufferInput()
+    {
+        string pressed = input.heavy ? "heavy" : input.kick ? "kick" : input.light ? "light" : null;
+        if (pressed != null)
+        {
+            bufferedAttack = pressed;
+            bufferAge = 0;
+        }
+        else if (bufferedAttack != null && ++bufferAge > BufferTicks)
+            bufferedAttack = null;
+    }
+
+    private MoveEntry ChooseGroundMove(InputFrame inp)
+    {
+        if (inp.grab && !inp.down && kit.data.canGrab)
+            return kit.Move("grab");
+        if (inp.down && kit.data.canCrouch)
+        {
+            string button = inp.heavy ? "heavy" : inp.kick ? "kick" : inp.light ? "light" : null;
+            if (button == null)
+                return null;
+            return kit.MoveForInput(button, "crouch") ?? kit.MoveForState("crouch");
+        }
+        if (inp.heavy && inp.x == facing)
+            return kit.MoveForInput("forward+heavy") ?? kit.Move("heavy");
+        if (inp.kick && inp.x == -facing)
+            return kit.MoveForInput("back+kick") ?? kit.Move("kick");
+        if (inp.heavy)
+            return kit.Move("heavy");
+        if (inp.kick)
+            return kit.Move("kick");
+        if (inp.light)
+            return kit.Move("light");
+        return null;
     }
 
     private void TickNeutral(Match match)
@@ -166,44 +250,34 @@ public class Fighter
 
         FaceOpponent();
         InputFrame inp = input;
-        MoveEntry chosen = null;
-        if (inp.grab && !inp.down)
-            chosen = def.Move("grab");
-        else if (inp.heavy && inp.x == facing && !inp.down)
-            chosen = def.MoveForInput("forward+heavy") ?? def.Move("heavy");
-        else if (inp.down && inp.AnyAttack)
-            chosen = def.MoveForState("crouch");
-        else if (inp.heavy)
-            chosen = def.Move("heavy");
-        else if (inp.kick)
-            chosen = def.Move("kick");
-        else if (inp.light)
-            chosen = def.Move("light");
-
+        MoveEntry chosen = ChooseGroundMove(inp);
         if (chosen != null)
         {
-            StartMove(chosen, match);
+            chainCount = 0;
+            StartMove(chosen);
             return;
         }
 
-        if (inp.up)
+        if (inp.up && kit.data.canJump)
         {
             SetState(FighterState.Jump);
-            vel = new Vector2(inp.x * def.Stats.jumpForward, def.Stats.jumpVelocity);
+            float jump = def.Stats.jumpVelocity * kit.data.jumpScale;
+            vel = new Vector2(inp.x * def.Stats.jumpForward * kit.data.speedScale, jump);
             airAttackUsed = false;
-            SetFrame("jump", 0);
+            PlayAnim(inp.x == facing && kit.HasAnim("jump_forward") ? "jump_forward" : "jump_up", true);
             match.Sfx("jump", 0.5f);
             return;
         }
 
         bool holdingBack = inp.x == -facing;
         bool threatened = opponent != null && opponent.IsThreat && Mathf.Abs(opponent.pos.x - pos.x) < 120f;
-        if (inp.down)
+        bool canBlock = kit.data.canBlock;
+        if (inp.down && kit.data.canCrouch)
         {
-            if (holdingBack && threatened)
+            if (holdingBack && threatened && canBlock)
             {
                 state = FighterState.BlockCrouch;
-                SetFrame("block", 1);
+                SetFrame("block", 3);
             }
             else
             {
@@ -214,17 +288,29 @@ public class Fighter
             }
             vel.x = 0f;
         }
-        else if (holdingBack && threatened)
+        else if (holdingBack && threatened && canBlock)
         {
             state = FighterState.BlockStand;
             vel.x = 0f;
-            SetFrame("block", 0);
+            SetFrame("block", 1);
         }
         else if (inp.x != 0)
         {
             state = FighterState.Walk;
-            vel.x = inp.x * (inp.x == facing ? def.Stats.walkSpeed : def.Stats.backSpeed);
-            PlayAnim("walk");
+            float speed = inp.x == facing ? def.Stats.walkSpeed : def.Stats.backSpeed;
+            vel.x = inp.x * speed * kit.data.speedScale;
+            if (Hops)
+            {
+                // Hop locomotion: move in bursts while airborne, plant on landing.
+                const int period = 22;
+                float phase = (hopTick++ % period) / (float)period;
+                float height = kit.Name == "no_legs" ? 7f : 9f;
+                bob = Mathf.Round(Mathf.Sin(phase * Mathf.PI) * height);
+                vel.x *= phase < 0.85f ? 1.7f : 0.1f;
+                if (hopTick % period == 0)
+                    match.OnHopLanded(this);
+            }
+            PlayAnim(inp.x == facing ? "walk_forward" : "walk_back");
             AdvanceAnim();
         }
         else
@@ -241,23 +327,25 @@ public class Fighter
         InputFrame inp = input;
         if (!airAttackUsed && inp.AnyAttack)
         {
-            MoveEntry air = def.MoveForState("air");
+            MoveEntry air = inp.kick ? kit.MoveForInput("kick", "air") : null;
+            air ??= kit.MoveForState("air");
             if (air != null)
             {
-                StartMove(air, match);
+                StartMove(air);
                 return;
             }
         }
-        SetFrame("jump", stateTick < 5 ? 0 : (vel.y > 0f ? 1 : 2));
+        AdvanceAnimOver(frameAnim, 34);
     }
 
-    private void StartMove(MoveEntry entry, Match match)
+    private void StartMove(MoveEntry entry)
     {
         bool air = entry.state == "air";
         SetState(FighterState.Attack);
         move = entry;
         moveTick = 0;
         moveConnected = false;
+        bufferedAttack = null;
         if (air)
             airAttackUsed = true;
         else
@@ -272,10 +360,26 @@ public class Fighter
         if (!air)
         {
             bool lunging = move.lunge > 0f && moveTick >= move.startup - 2 && moveTick < move.startup + move.active;
-            vel.x = lunging ? facing * move.lunge : 0f;
+            vel.x = lunging ? facing * move.lunge * Mathf.Max(0.5f, kit.data.speedScale) : 0f;
         }
         if (moveTick == move.startup)
             match.Sfx(move.sfxWhiff, 0.7f);
+
+        // Chain cancel: a connected (hit or blocked) move can flow into its follow-up.
+        if (moveConnected && bufferedAttack != null && move.chains != null && moveTick >= move.startup)
+        {
+            foreach (ChainEntry chain in move.chains)
+            {
+                if (chain.input != bufferedAttack)
+                    continue;
+                MoveEntry next = kit.Move(chain.move);
+                if (next == null)
+                    continue;
+                chainCount++;
+                StartMove(next);
+                return;
+            }
+        }
 
         UpdateMoveFrame();
         if (!air && moveTick >= move.Total)
@@ -284,7 +388,7 @@ public class Fighter
             {
                 SetState(FighterState.Crouch);
                 PlayAnim("crouch", true);
-                SetFrame("crouch", 1);
+                SetFrame("crouch", 3);
                 move = null;
             }
             else
@@ -330,19 +434,19 @@ public class Fighter
         victim.vel = Vector2.zero;
         victim.pushVel = 0f;
         victim.facing = -facing;
-        victim.SetFrame("hurt", 0);
+        victim.SetFrame(victim.kit.HasAnim("thrown") ? "thrown" : "hurt", 0);
     }
 
     private void TickThrowing(Match match)
     {
         int t = stateTick;
         string throwAnim = move != null ? move.anim : "grab_throw";
-        SetFrame(throwAnim, t < 10 ? 1 : t < 24 ? 2 : t < 32 ? 3 : 4);
+        SetFrame(throwAnim, t < 6 ? 1 : t < 16 ? 2 : t < 24 ? 3 : t < 32 ? 4 : 5);
         if (throwVictim != null && throwVictim.state == FighterState.Thrown)
         {
-            if (t < 24)
+            if (t < 26)
                 match.PlaceThrowVictim(this, throwVictim, t);
-            if (t == 24)
+            if (t == 26)
                 match.ReleaseThrow(this, throwVictim);
         }
         if (t >= 46)
@@ -361,8 +465,8 @@ public class Fighter
         move = null;
         stunTicks = ticks;
         vel.x = 0f;
-        int frame = crouched ? 2 : (level == "high" || level == "overhead" ? 0 : 1);
-        SetFrame("hurt", frame);
+        int frame = crouched ? 4 : (level == "high" || level == "overhead" ? 0 : 2);
+        SetFrame("hurt", frame + (Random.value < 0.5f ? 1 : 0));
     }
 
     public void EnterBlockstun(int ticks)
@@ -372,14 +476,15 @@ public class Fighter
         stateTick = 0;
         stunTicks = ticks;
         vel.x = 0f;
-        SetFrame("block", crouched ? 1 : 0);
+        SetFrame("block", crouched ? 3 : 1);
     }
 
     public void Launch(float vx, float vy)
     {
         SetState(FighterState.Launched);
         move = null;
-        vel = new Vector2(vx, vy);
+        float jump = kit.data.canJump ? 1f : 0.35f;
+        vel = new Vector2(vx, vy * jump);
         pos.y = Mathf.Max(pos.y, 1f);
         juggleCount++;
         rotation = 0f;
@@ -394,6 +499,7 @@ public class Fighter
         juggleCount = 0;
         stunTicks = 0;
         rotation = 0f;
+        chainCount = 0;
         PlayAnim("idle", true);
     }
 
@@ -439,15 +545,18 @@ public class Fighter
         switch (state)
         {
             case FighterState.Jump:
-                ReturnToNeutral();
+                SetState(FighterState.Land);
                 vel.x = 0f;
+                SetFrame("crouch", 1);
                 match.Sfx("land", 0.5f);
                 break;
             case FighterState.Attack:
                 if (move != null && move.state == "air")
                 {
-                    ReturnToNeutral();
+                    move = null;
+                    SetState(FighterState.Land);
                     vel.x = 0f;
+                    SetFrame("crouch", 1);
                     match.Sfx("land", 0.5f);
                 }
                 break;
@@ -457,7 +566,7 @@ public class Fighter
                 vel = Vector2.zero;
                 pushVel = 0f;
                 juggleCount = 0;
-                SetFrame("knockdown", 2);
+                SetFrame("knockdown", 3);
                 match.OnFighterLanded(this);
                 break;
         }
@@ -479,23 +588,29 @@ public class Fighter
             case FighterState.Victory:
                 return null;
             case FighterState.Launched:
-                return juggleCount < 3 ? def.data.hurtAir.ToWorld(pos, facing) : (Rect?)null;
+                return juggleCount < 3 ? kit.data.hurtAir.ToWorld(pos, facing) : (Rect?)null;
             case FighterState.Jump:
-                return def.data.hurtAir.ToWorld(pos, facing);
+                return kit.data.hurtAir.ToWorld(pos, facing);
         }
         if (state == FighterState.Attack && move != null && move.state == "air")
-            return def.data.hurtAir.ToWorld(pos, facing);
-        return Crouching ? def.data.hurtCrouch.ToWorld(pos, facing) : def.data.hurtStand.ToWorld(pos, facing);
+            return kit.data.hurtAir.ToWorld(pos, facing);
+        return Crouching ? kit.data.hurtCrouch.ToWorld(pos, facing) : kit.data.hurtStand.ToWorld(pos, facing);
     }
+
+    public Rect StandBox => kit.data.hurtStand.ToWorld(pos, facing);
 
     public Rect Hitbox() => move.hitbox.ToWorld(pos, facing);
 
-    public bool CanBeThrown => !Airborne && (Neutral || state == FighterState.Dizzy ||
+    public Vector2 StumpPoint => pos + new Vector2(kit.data.stumpX * facing, kit.data.stumpY);
+
+    public Vector2 NeckPoint => pos + new Vector2(def.data.neckX * facing, def.data.neckY);
+
+    public bool CanBeThrown => !Airborne && (Neutral || state == FighterState.Dizzy || state == FighterState.Land ||
                                (state == FighterState.Attack && move != null && moveTick >= move.startup + move.active));
 
     public bool CanBlock(string level, bool attackerAirborne)
     {
-        if (Airborne || !(Neutral || state == FighterState.BlockStand || state == FighterState.BlockCrouch))
+        if (!kit.data.canBlock || Airborne || !(Neutral || state == FighterState.BlockStand || state == FighterState.BlockCrouch))
             return false;
         if (input.x != -facing)
             return false;
@@ -507,23 +622,31 @@ public class Fighter
         return true;
     }
 
+    public Vector2 HandAnchor()
+    {
+        AnimationEntry entry = kit.Anim(frameAnim);
+        if (entry != null && entry.anchorX != null && entry.anchorX.Length > frameIndex && frameIndex >= 0)
+            return new Vector2(entry.anchorX[frameIndex], entry.anchorY[frameIndex]);
+        return new Vector2(30f, 60f);
+    }
+
     // ------------------------------------------------------------------ animation
 
     public void PlayAnim(string name, bool restart = false)
     {
-        if (!restart && anim != null && anim.name == name && frameAnim == name)
+        if (!restart && anim != null && frameAnim == name && anim == kit.Anim(name))
             return;
-        anim = def.Anim(name);
+        anim = kit.Anim(name);
         animIndex = 0;
         animTick = 0;
         frameAnim = name;
         frameIndex = 0;
-        sprite = def.Frame(name, 0);
+        sprite = SpriteOf(anim, 0);
     }
 
     public void AdvanceAnim()
     {
-        if (anim == null || anim.ticks == null || anim.ticks.Length == 0 || frameAnim != anim.name)
+        if (anim == null || anim.ticks == null || anim.ticks.Length == 0)
             return;
         animTick++;
         int duration = anim.ticks[Mathf.Min(animIndex, anim.ticks.Length - 1)];
@@ -535,13 +658,31 @@ public class Fighter
         else if (anim.loop)
             animIndex = 0;
         frameIndex = animIndex;
-        sprite = def.Frame(anim.name, animIndex);
+        sprite = SpriteOf(anim, animIndex);
+    }
+
+    // Spreads an animation evenly over a fixed duration (getup, jump arcs).
+    private void AdvanceAnimOver(string name, int totalTicks)
+    {
+        AnimationEntry entry = kit.Anim(name);
+        if (entry == null || entry.sprites.Length == 0)
+            return;
+        int index = Mathf.Clamp(stateTick * entry.sprites.Length / Mathf.Max(1, totalTicks), 0, entry.sprites.Length - 1);
+        SetFrame(name, index);
     }
 
     public void SetFrame(string animation, int index)
     {
+        AnimationEntry entry = kit.Anim(animation);
         frameAnim = animation;
-        frameIndex = index;
-        sprite = def.Frame(animation, index);
+        frameIndex = entry != null ? Mathf.Clamp(index, 0, entry.sprites.Length - 1) : 0;
+        sprite = SpriteOf(entry, frameIndex);
+    }
+
+    private Sprite SpriteOf(AnimationEntry entry, int index)
+    {
+        if (entry == null || entry.sprites == null || entry.sprites.Length == 0)
+            return sprite;
+        return def.SpriteAt(entry.sprites[Mathf.Clamp(index, 0, entry.sprites.Length - 1)]);
     }
 }
