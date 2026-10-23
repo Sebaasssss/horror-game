@@ -104,12 +104,12 @@ public class ModeScreen : GameScreen
         string[] left =
         {
             "JUGADOR 1", "", "MOVER     A D", "SALTAR    W", "AGACHAR   S", "GOLPE     F",
-            "FUERTE    G", "PATADA    H", "AGARRE    R", "ESPECIAL  ADELANTE+G"
+            "FUERTE    G", "PATADA    H", "AGARRE    R", "ESPECIAL  ADELANTE+G", "GIRATORIA ATRAS+H"
         };
         string[] right =
         {
             "JUGADOR 2", "", "MOVER     < >", "SALTAR    ARRIBA", "AGACHAR   ABAJO", "GOLPE     K",
-            "FUERTE    L", "PATADA    N (;)", "AGARRE    P", "ESPECIAL  ADELANTE+L"
+            "FUERTE    L", "PATADA    N (;)", "AGARRE    P", "ESPECIAL  ADELANTE+L", "GIRATORIA ATRAS+N"
         };
         for (int i = 0; i < left.Length; i++)
         {
@@ -120,11 +120,11 @@ public class ModeScreen : GameScreen
             new PixelText(controls, "small", right[i], new Vector2(8f, 78f - i * 12f), TextAlign.Left,
                 Layers.Overlay - 10, color);
         }
-        new PixelText(controls, "small", "ATRAS = BLOQUEAR   ABAJO+ATRAS = BLOQUEO BAJO", new Vector2(0f, -56f),
+        new PixelText(controls, "small", "COMBOS: F F F / G G / H H   ATRAS = BLOQUEAR", new Vector2(0f, -56f),
             TextAlign.Center, Layers.Overlay - 10, new Color(1f, 0.85f, 0.5f));
         new PixelText(controls, "small", "ESC: PAUSA   F1: FILTRO CRT", new Vector2(0f, -70f), TextAlign.Center,
             Layers.Overlay - 10, new Color(1f, 0.85f, 0.5f));
-        new PixelText(controls, "small", "FINISH HIM: G = DECAPITAR  F/H/R = DESMEMBRAR", new Vector2(0f, -86f),
+        new PixelText(controls, "small", "FATALITY: G DECAPITA  H EN TROZOS  F/R EXPLOTA", new Vector2(0f, -86f),
             TextAlign.Center, Layers.Overlay - 10, new Color(1f, 0.4f, 0.4f));
     }
 }
