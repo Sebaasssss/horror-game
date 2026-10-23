@@ -563,7 +563,7 @@ public class Match
             PushApart(attacker, defender, move.pushback * 0.35f);
             fx.Spark(contact, "block");
             fx.Shake(0.08f);
-            hitstop = Mathf.Max(4, move.hitstop - 4);
+            hitstop = Mathf.Max(3, move.hitstop - 4);
             Sfx("block");
             return;
         }
@@ -608,7 +608,7 @@ public class Match
             hud.Splatter(critical ? 8 : 3, blood);
         }
         fx.Shake(move.shake + (lethal ? 0.9f : 0f) + (critical ? 0.4f : 0f));
-        hitstop = move.hitstop + (lethal ? 14 : 0) + (critical ? 6 : 0);
+        hitstop = Mathf.RoundToInt(move.hitstop * 0.8f) + (lethal ? 14 : 0) + (critical ? 5 : 0);
         Sfx(move.sfxHit);
         Sfx("blood_splat", 0.6f);
         hud.Combo(attacker, defender.comboTaken);

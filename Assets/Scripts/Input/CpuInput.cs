@@ -113,6 +113,16 @@ public class CpuInput : IInputSource
         }
 
         float r = Roll();
+        if (distance > 90f && r < 0.18f * (0.5f + skill))
+        {
+            if (toward > 0) tap.dashRight = true; else tap.dashLeft = true;
+            return;
+        }
+        if (foe.IsThreat && distance < 70f && r < 0.12f * skill)
+        {
+            if (toward > 0) tap.dashLeft = true; else tap.dashRight = true;
+            return;
+        }
         if (distance > 120f)
         {
             if (r < 0.12f)

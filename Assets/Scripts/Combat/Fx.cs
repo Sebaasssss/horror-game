@@ -197,6 +197,32 @@ public class Fx
         });
     }
 
+    private class Ghost
+    {
+        public SpriteRenderer renderer;
+        public int life;
+    }
+
+    private readonly List<Ghost> ghosts = new List<Ghost>();
+
+    // Fading copy of a fighter's current frame (dash trail).
+    public void Afterimage(Fighter fighter)
+    {
+        SpriteRenderer renderer = Nodes.Sprite(root, "afterimage", fighter.sprite, Nodes.Snap(fighter.pos) +
+            new Vector2(0f, fighter.bob), Layers.Fighter - 1, new Color(fighter.def.accentColor.r,
+            fighter.def.accentColor.g, fighter.def.accentColor.b, 0.55f));
+        renderer.transform.localScale = new Vector3(fighter.facing, 1f, 1f);
+        ghosts.Add(new Ghost { renderer = renderer, life = 10 });
+    }
+
+    // Small puff of dust kicked up behind a dash.
+    public void Dust(Vector2 at, int behind)
+    {
+        for (int i = 0; i < 8; i++)
+            Emit(at + new Vector2(behind * Range(2f, 10f), Range(1f, 4f)),
+                new Vector2(behind * Range(0.5f, 1.8f), Range(0.3f, 1.2f)), new Color(0.55f, 0.5f, 0.45f));
+    }
+
     public void Shake(float amount)
     {
         trauma = Mathf.Min(1.6f, trauma + amount);
@@ -256,6 +282,19 @@ public class Fx
                 continue;
             }
             p.renderer.transform.localPosition = Nodes.Snap(p.pos);
+        }
+
+        for (int i = ghosts.Count - 1; i >= 0; i--)
+        {
+            Ghost ghost = ghosts[i];
+            Color c = ghost.renderer.color;
+            c.a = 0.55f * --ghost.life / 10f;
+            ghost.renderer.color = c;
+            if (ghost.life <= 0)
+            {
+                Nodes.Destroy(ghost.renderer.gameObject);
+                ghosts.RemoveAt(i);
+            }
         }
 
         foreach (PoolDecal pool in pools)
@@ -356,6 +395,9 @@ public class Fx
         foreach (PoolDecal pool in pools)
             Nodes.Destroy(pool.renderer.gameObject);
         pools.Clear();
+        foreach (Ghost ghost in ghosts)
+            Nodes.Destroy(ghost.renderer.gameObject);
+        ghosts.Clear();
         fountains.Clear();
         foreach (Particle p in particles)
             if (p.alive)

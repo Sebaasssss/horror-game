@@ -2,7 +2,7 @@ using UnityEngine;
 
 public enum FighterState
 {
-    Intro, Idle, Walk, Crouch, Jump, Land, Attack, BlockStand, BlockCrouch, Hitstun, Launched, Lying, GetUp,
+    Intro, Idle, Walk, Crouch, Jump, Land, Dash, Attack, BlockStand, BlockCrouch, Hitstun, Launched, Lying, GetUp,
     Throwing, Thrown, Dizzy, KO, Victory, Dead, Exploded
 }
 
@@ -10,7 +10,9 @@ public enum FighterState
 // `kit` is the current body state (full, one_arm, no_arms, one_leg, no_legs): it owns animations, moves and boxes.
 public class Fighter
 {
-    private const int BufferTicks = 10;
+    private const int BufferTicks = 12;
+    private const int DashTicks = 12;
+    private const int BackdashTicks = 11;
 
     public readonly CharacterDef def;
     public readonly int index;
@@ -37,6 +39,8 @@ public class Fighter
     private string bufferedAttack;
     private int bufferAge;
 
+    public int dashDirection;
+    public bool Dashing => state == FighterState.Dash;
     public int comboTaken;
     public int juggleCount;
     public int flashTicks;
@@ -142,7 +146,7 @@ public class Fighter
         stateTick++;
         if (flashTicks > 0)
             flashTicks--;
-        if (state != FighterState.Walk)
+        if (state != FighterState.Walk && state != FighterState.Dash)
         {
             bob = Mathf.Max(0f, bob - 2f);
             hopTick = 0;
@@ -166,8 +170,11 @@ public class Fighter
                 TickNeutral(match);
                 break;
             case FighterState.Land:
-                if (stateTick >= 5)
+                if (stateTick >= 3)
                     ReturnToNeutral();
+                break;
+            case FighterState.Dash:
+                TickDash(match);
                 break;
             case FighterState.Jump:
                 TickJump(match);
@@ -187,12 +194,12 @@ public class Fighter
                 if (--stunTicks <= 0 && health > 0)
                 {
                     SetState(FighterState.GetUp);
-                    stunTicks = 20;
+                    stunTicks = 14;
                     PlayAnim("getup", true);
                 }
                 break;
             case FighterState.GetUp:
-                AdvanceAnimOver("getup", 20);
+                AdvanceAnimOver("getup", 14);
                 if (--stunTicks <= 0)
                     ReturnToNeutral();
                 break;
@@ -255,6 +262,13 @@ public class Fighter
         {
             chainCount = 0;
             StartMove(chosen);
+            return;
+        }
+
+        int dash = inp.dashRight ? 1 : inp.dashLeft ? -1 : 0;
+        if (dash != 0)
+        {
+            StartDash(dash, match);
             return;
         }
 
@@ -322,6 +336,61 @@ public class Fighter
         }
     }
 
+    // Forward dash: fast burst using the special's low dash frames. Back dash: a quick hop away with brief
+    // invulnerability. Both can be cancelled into attacks after a few frames.
+    private void StartDash(int direction, Match match)
+    {
+        dashDirection = direction;
+        SetState(FighterState.Dash);
+        bool forward = direction == facing;
+        float power = forward ? 6.5f : 5.2f;
+        vel.x = direction * power * Mathf.Max(0.55f, kit.data.speedScale);
+        match.Sfx("dash", 0.6f);
+        match.fx.Dust(pos, -direction);
+    }
+
+    private void TickDash(Match match)
+    {
+        bool forward = dashDirection == facing;
+        int length = forward ? DashTicks : BackdashTicks;
+        float t = stateTick / (float)length;
+        float power = (forward ? 6.5f : 5.2f) * Mathf.Max(0.55f, kit.data.speedScale);
+        vel.x = dashDirection * power * (1f - t * t);
+        if (forward)
+        {
+            if (kit.HasAnim("special"))
+                SetFrame("special", stateTick < 4 ? 1 : 2);
+            else
+                AdvanceAnimOver("walk_forward", length);
+        }
+        else
+        {
+            bob = Mathf.Round(Mathf.Sin(t * Mathf.PI) * 6f);
+            AdvanceAnimOver("walk_back", length);
+        }
+        if (stateTick % 2 == 0)
+            match.fx.Afterimage(this);
+        if (stateTick >= 4)
+        {
+            MoveEntry chosen = ChooseGroundMove(input);
+            if (chosen != null)
+            {
+                chainCount = 0;
+                StartMove(chosen);
+                // Keep some dash momentum into the attack.
+                pushVel = vel.x * 0.6f;
+                return;
+            }
+        }
+        if (stateTick >= length)
+        {
+            bob = 0f;
+            ReturnToNeutral();
+        }
+    }
+
+    public bool Invulnerable => state == FighterState.Dash && dashDirection != facing && stateTick < 7;
+
     private void TickJump(Match match)
     {
         InputFrame inp = input;
@@ -364,6 +433,19 @@ public class Fighter
         }
         if (moveTick == move.startup)
             match.Sfx(move.sfxWhiff, 0.7f);
+
+        // Special cancel: any connected normal can be cancelled into the special with forward + heavy.
+        if (moveConnected && bufferedAttack == "heavy" && input.x == facing && move.input != "forward+heavy"
+            && moveTick >= move.startup)
+        {
+            MoveEntry special = kit.MoveForInput("forward+heavy");
+            if (special != null)
+            {
+                chainCount++;
+                StartMove(special);
+                return;
+            }
+        }
 
         // Chain cancel: a connected (hit or blocked) move can flow into its follow-up.
         if (moveConnected && bufferedAttack != null && move.chains != null && moveTick >= move.startup)
@@ -562,7 +644,7 @@ public class Fighter
                 break;
             case FighterState.Launched:
                 SetState(FighterState.Lying);
-                stunTicks = 36;
+                stunTicks = 24;
                 vel = Vector2.zero;
                 pushVel = 0f;
                 juggleCount = 0;
@@ -576,6 +658,8 @@ public class Fighter
 
     public Rect? Hurtbox()
     {
+        if (Invulnerable)
+            return null;
         switch (state)
         {
             case FighterState.Lying:

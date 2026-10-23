@@ -8,6 +8,8 @@ public struct InputFrame
     public bool up, down;
     public bool light, heavy, kick, grab;
     public bool upPressed, downPressed, leftPressed, rightPressed;
+    // Double-tap left / right (dash); the fighter resolves it into a forward or back dash.
+    public bool dashLeft, dashRight;
     public bool confirm, cancel, start;
 
     public bool AnyAttack => light || heavy || kick;
@@ -45,8 +47,10 @@ public class KeyBindings
 
 public class KeyboardInput : IInputSource
 {
+    private const float DoubleTapSeconds = 0.22f;
     private readonly KeyBindings keys;
     private InputFrame pending;
+    private float lastLeft = -1f, lastRight = -1f;
 
     public KeyboardInput(KeyBindings keys)
     {
@@ -67,8 +71,23 @@ public class KeyboardInput : IInputSource
 
         pending.upPressed |= keyboard[keys.up].wasPressedThisFrame;
         pending.downPressed |= keyboard[keys.down].wasPressedThisFrame;
-        pending.leftPressed |= keyboard[keys.left].wasPressedThisFrame;
-        pending.rightPressed |= keyboard[keys.right].wasPressedThisFrame;
+        bool leftTap = keyboard[keys.left].wasPressedThisFrame;
+        bool rightTap = keyboard[keys.right].wasPressedThisFrame;
+        pending.leftPressed |= leftTap;
+        pending.rightPressed |= rightTap;
+        float now = Time.unscaledTime;
+        if (leftTap)
+        {
+            pending.dashLeft |= lastLeft >= 0f && now - lastLeft < DoubleTapSeconds;
+            lastLeft = pending.dashLeft ? -1f : now;
+            lastRight = -1f;
+        }
+        if (rightTap)
+        {
+            pending.dashRight |= lastRight >= 0f && now - lastRight < DoubleTapSeconds;
+            lastRight = pending.dashRight ? -1f : now;
+            lastLeft = -1f;
+        }
 
         bool light = Pressed(keyboard, keys.light, keys.altLight);
         bool heavy = Pressed(keyboard, keys.heavy, keys.altHeavy);
@@ -131,6 +150,8 @@ public class MergedInput : IInputSource
             merged.downPressed |= frame.downPressed;
             merged.leftPressed |= frame.leftPressed;
             merged.rightPressed |= frame.rightPressed;
+            merged.dashLeft |= frame.dashLeft;
+            merged.dashRight |= frame.dashRight;
             merged.confirm |= frame.confirm;
             merged.cancel |= frame.cancel;
             merged.start |= frame.start;

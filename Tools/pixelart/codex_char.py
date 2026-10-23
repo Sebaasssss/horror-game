@@ -26,12 +26,12 @@ TARGET_HEIGHT = {"jason": 94, "ghost": 90, "llorona": 90}
 
 # Health is doubled from the first version so fights last long enough to lose limbs.
 STATS = {
-    "jason": {"health": 2200, "walkSpeed": 1.2, "backSpeed": 1.0, "jumpVelocity": 6.3, "jumpForward": 1.9,
-              "gravity": 0.36, "pushWidth": 28, "weight": 1.0},
-    "ghost": {"health": 2000, "walkSpeed": 1.55, "backSpeed": 1.3, "jumpVelocity": 6.7, "jumpForward": 2.3,
-              "gravity": 0.36, "pushWidth": 24, "weight": 1.0},
-    "llorona": {"health": 1900, "walkSpeed": 1.45, "backSpeed": 1.35, "jumpVelocity": 6.9, "jumpForward": 2.4,
-                "gravity": 0.33, "pushWidth": 24, "weight": 0.9},
+    "jason": {"health": 2200, "walkSpeed": 1.65, "backSpeed": 1.35, "jumpVelocity": 7.4, "jumpForward": 2.6,
+              "gravity": 0.52, "pushWidth": 28, "weight": 1.0},
+    "ghost": {"health": 2000, "walkSpeed": 2.1, "backSpeed": 1.75, "jumpVelocity": 7.8, "jumpForward": 3.1,
+              "gravity": 0.52, "pushWidth": 24, "weight": 1.0},
+    "llorona": {"health": 1900, "walkSpeed": 1.95, "backSpeed": 1.8, "jumpVelocity": 8.0, "jumpForward": 3.2,
+                "gravity": 0.5, "pushWidth": 24, "weight": 0.9},
 }
 ACCENT = {"jason": "#9fc26a", "ghost": "#9fb6ff", "llorona": "#ff7ab6"}
 FRAME_W, FRAME_H = 160, 156
@@ -45,7 +45,7 @@ ACTIVE = {"punch_1": 2, "punch_2": 2, "uppercut": 3, "slash": 3, "slash_side": 2
           "sweep": 2, "crouch_attack": 2, "air_attack": 2, "air_kick": 2, "special": 3, "headbutt": 2,
           "slash_low": 2, "lunge": 2}
 
-TICKS = {"idle": 8, "walk_forward": 5, "walk_back": 6, "hop_forward": 6, "hop_back": 7, "crawl_forward": 8,
+TICKS = {"idle": 7, "walk_forward": 4, "walk_back": 4, "hop_forward": 6, "hop_back": 7, "crawl_forward": 8,
          "crawl_back": 9, "crouch": 3, "dizzy": 10, "victory": 10, "intro": 14}
 LOOPS = {"idle", "walk_forward", "walk_back", "hop_forward", "hop_back", "crawl_forward", "crawl_back", "dizzy"}
 HOLD_LAST = {"ko": [8, 8, 10, 12, 90], "headless": [10, 10, 12, 14, 90], "bisected": [10, 12, 12, 14, 90]}
@@ -346,7 +346,7 @@ def to_pivot(x, y, scale):
     return x - PIVOT_X, (FRAME_H - pivot_bottom(scale)) - y
 
 
-def front_box(frame, scale, depth=26, max_h=50):
+def front_box(frame, scale, depth=34, max_h=58, reach=7):
     opaque = frame[..., 3] > 0
     xs = np.nonzero(opaque.any(axis=0))[0]
     if len(xs) == 0:
@@ -359,7 +359,9 @@ def front_box(frame, scale, depth=26, max_h=50):
         mid = (top + bottom) // 2
         top, bottom = mid - max_h // 2, mid + max_h // 2
     left, base = to_pivot(max_x - depth, bottom, scale)
-    return {"x": int(max(left, -4)), "y": int(max(base, 0)), "w": int(depth + 3), "h": int(bottom - top + 1)}
+    left = max(left, -4)
+    right = max_x - PIVOT_X + reach
+    return {"x": int(left), "y": int(max(base - 2, 0)), "w": int(right - left), "h": int(bottom - top + 5)}
 
 
 def hand_point(frame, scale):
@@ -412,43 +414,49 @@ def chain(*pairs):
 
 
 def base_moves(char_id, anim_frames, blade_hit):
-    """Full-body move list. anim_frames maps animation name -> frame count (after aliases)."""
-    slow = 2 if char_id == "jason" else 0
+    """Full-body move list (fast arcade frame data). anim_frames maps animation name -> frame count."""
+    slow = 1 if char_id == "jason" else 0
     dmg = {"jason": 1.15, "ghost": 1.0, "llorona": 0.95}.get(char_id, 1.0)
     f = anim_frames
     d = lambda v: int(round(v * dmg))
     return [
-        move("light", "light", "stand", "punch_1", f["punch_1"], 5 + slow // 2, 3, 8, d(40),
-             chains=chain(("light", "light2"), ("kick", "kick"), ("heavy", "heavy")), hit="hit_light", blood=4),
-        move("light2", "light", "stand", "punch_2", f["punch_2"], 5, 3, 10, d(45),
+        move("light", "light", "stand", "punch_1", f["punch_1"], 4, 3, 6, d(40),
+             chains=chain(("light", "light2"), ("kick", "kick"), ("heavy", "heavy")), hit="hit_light", blood=4,
+             hitstop=5),
+        move("light2", "light", "stand", "punch_2", f["punch_2"], 4, 3, 7, d(45),
              chains=chain(("light", "uppercut"), ("heavy", "slash_side"), ("kick", "roundhouse")),
-             hit="hit_light", blood=5),
-        move("uppercut", "light", "stand", "uppercut", f["uppercut"], 7, 4, 16, d(80), launcher=True,
-             dismember=0.15, hit="hit_kick", whiff="whoosh_heavy", shake=0.5, hitstop=10, blood=10),
-        move("heavy", "heavy", "stand", "slash", f["slash"], 12 + slow, 5, 18, d(120), level="overhead",
-             chains=chain(("heavy", "slash_side")), dismember=0.1, hit=blade_hit + "_heavy",
-             whiff="whoosh_heavy", shake=0.7, hitstop=11, blood=16, pushback=8.0),
-        move("slash_side", "heavy", "stand", "slash_side", f["slash_side"], 9 + slow, 4, 16, d(100),
-             dismember=0.22, hit=blade_hit + "_heavy", whiff="whoosh_heavy", shake=0.6, hitstop=10, blood=14),
-        move("kick", "kick", "stand", "kick", f["kick"], 8 + slow, 4, 13, d(70), pushback=12.0,
-             chains=chain(("kick", "roundhouse")), hit="hit_kick", whiff="whoosh_light", shake=0.3, blood=4),
-        move("roundhouse", "back+kick", "stand", "roundhouse", f["roundhouse"], 11 + slow, 4, 18, d(95),
-             knockdown=True, dismember=0.12, hit="hit_kick", whiff="whoosh_heavy", shake=0.6, hitstop=10, blood=8),
-        move("crouch_light", "light", "crouch", "crouch_attack", f["crouch_attack"], 6, 3, 12, d(45), level="low",
-             chains=chain(("kick", "sweep")), hit=blade_hit + "_light", blood=6),
-        move("sweep", "kick", "crouch", "sweep", f["sweep"], 9 + slow, 4, 18, d(65), level="low", knockdown=True,
-             hit="hit_kick", whiff="whoosh_light", shake=0.3),
-        move("uppercut_c", "heavy", "crouch", "uppercut", f["uppercut"], 8, 4, 18, d(85), launcher=True,
-             dismember=0.1, hit="hit_kick", whiff="whoosh_heavy", shake=0.5, hitstop=10, blood=10),
-        move("air", "light", "air", "air_attack", f["air_attack"], 5, 16, 0, d(75), level="overhead",
-             hit=blade_hit + "_heavy", whiff="whoosh_heavy", blood=10, shake=0.3),
-        move("air_kick", "kick", "air", "air_kick", f["air_kick"], 5, 16, 0, d(65), level="overhead",
-             hit="hit_kick", blood=4, shake=0.3),
-        move("grab", "grab", "stand", "grab_throw", f["grab_throw"], 6, 3, 22, d(140), level="throw",
+             hit="hit_light", blood=5, hitstop=6),
+        move("uppercut", "light", "stand", "uppercut", f["uppercut"], 5, 4, 12, d(80), launcher=True,
+             chains=chain(("heavy", "special")), dismember=0.15, hit="hit_kick", whiff="whoosh_heavy", shake=0.5,
+             hitstop=8, blood=10),
+        move("heavy", "heavy", "stand", "slash", f["slash"], 9 + slow, 4, 13, d(120), level="overhead",
+             chains=chain(("heavy", "slash_side"), ("kick", "roundhouse")), dismember=0.1,
+             hit=blade_hit + "_heavy", whiff="whoosh_heavy", shake=0.7, hitstop=9, blood=16, pushback=8.0),
+        move("slash_side", "heavy", "stand", "slash_side", f["slash_side"], 7 + slow, 4, 11, d(100),
+             chains=chain(("heavy", "special"), ("light", "uppercut")), dismember=0.22, hit=blade_hit + "_heavy",
+             whiff="whoosh_heavy", shake=0.6, hitstop=8, blood=14),
+        move("kick", "kick", "stand", "kick", f["kick"], 6 + slow, 4, 9, d(70), pushback=12.0,
+             chains=chain(("kick", "roundhouse"), ("light", "light"), ("heavy", "slash_side")), hit="hit_kick",
+             whiff="whoosh_light", shake=0.3, blood=4, hitstop=6),
+        move("roundhouse", "back+kick", "stand", "roundhouse", f["roundhouse"], 8 + slow, 4, 12, d(95),
+             knockdown=True, dismember=0.12, hit="hit_kick", whiff="whoosh_heavy", shake=0.6, hitstop=8, blood=8),
+        move("crouch_light", "light", "crouch", "crouch_attack", f["crouch_attack"], 4, 3, 8, d(45), level="low",
+             chains=chain(("light", "crouch_light"), ("kick", "sweep"), ("heavy", "uppercut_c")),
+             hit=blade_hit + "_light", blood=6, hitstop=5),
+        move("sweep", "kick", "crouch", "sweep", f["sweep"], 7 + slow, 4, 12, d(65), level="low", knockdown=True,
+             hit="hit_kick", whiff="whoosh_light", shake=0.3, hitstop=6),
+        move("uppercut_c", "heavy", "crouch", "uppercut", f["uppercut"], 6, 4, 12, d(85), launcher=True,
+             chains=chain(("heavy", "special")), dismember=0.1, hit="hit_kick", whiff="whoosh_heavy", shake=0.5,
+             hitstop=8, blood=10),
+        move("air", "light", "air", "air_attack", f["air_attack"], 4, 16, 0, d(75), level="overhead",
+             hit=blade_hit + "_heavy", whiff="whoosh_heavy", blood=10, shake=0.3, hitstop=7),
+        move("air_kick", "kick", "air", "air_kick", f["air_kick"], 4, 16, 0, d(65), level="overhead",
+             hit="hit_kick", blood=4, shake=0.3, hitstop=6),
+        move("grab", "grab", "stand", "grab_throw", f["grab_throw"], 4, 4, 16, d(140), level="throw",
              knockdown=True, hit="grab", blood=0, hitstop=0),
-        move("special", "forward+heavy", "stand", "special", f["special"], 12 + slow, 8, 20, d(110),
-             lunge=6.0 if char_id == "ghost" else 4.5, knockdown=True, dismember=0.15, hit=blade_hit + "_heavy",
-             whiff="whoosh_heavy", shake=0.7, hitstop=12, blood=16,
+        move("special", "forward+heavy", "stand", "special", f["special"], 9 + slow, 8, 14, d(110),
+             lunge=7.0 if char_id == "ghost" else 6.0, knockdown=True, dismember=0.15, hit=blade_hit + "_heavy",
+             whiff="whoosh_heavy", shake=0.7, hitstop=10, blood=16,
              name={"ghost": "LUNGE STAB", "jason": "MACHETE RUSH", "llorona": "LAMENTO"}.get(char_id, "SPECIAL")),
     ]
 
@@ -587,7 +595,7 @@ def build(char_id):
         # Hitboxes from the active frame of each move.
         for m in data["moves"]:
             if m["level"] == "throw":
-                m["hitbox"] = {"x": 6, "y": 20, "w": 34, "h": 56}
+                m["hitbox"] = {"x": 4, "y": 14, "w": 50, "h": 66}
                 continue
             pix = frames_of.get(m["anim"]) or frames_of.get(ALIASES.get(variant, {}).get(m["anim"], ""), None)
             if pix is None and variants:
